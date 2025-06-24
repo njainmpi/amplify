@@ -1,6 +1,6 @@
 #!/bin/sh
 
-#07.11.2024: All files with functions located here
+#24.06.2025: All files with functions located here
 
 source ../fMRI_analysis_pipeline/data_conversion_function.sh #converting data from either Bruker or Dicom format to NIFTI format
 source ../fMRI_analysis_pipeline/folder_existence_function.sh #check if folder is present or not
