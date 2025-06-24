@@ -171,6 +171,23 @@ do
         echo "Performing Step 8: Estimating Transformation Matrix and Coregistration of the data "
         echo ""
         echo ""
-        COREGISTRATION cleaned_N4_mean_mc_func.nii.gz anatomy.nii.gz
+        
+            # Loop until user is satisfied
+        while true; do
+            COREGISTRATION cleaned_N4_mean_mc_func.nii.gz anatomy.nii.gz
+
+            read -p "Are you happy with the registration? (yes/no): " response
+
+        if [[ "$response" == "yes" || "$response" == "y" ]]; then
+            echo "Proceeding to the next step..."
+            break
+        else
+            echo "Re-running coregistration..."
+        fi
+        done
+
     fi
 done
+
+
+
