@@ -19,7 +19,7 @@ BIAS_CORRECTED_IMAGE () {
         # Step 2: Coil (B1) inhomogeneity correction of EPI using N4 method 
         # Here we will be using the mask that we created on mean functional image.
 
-        N4BiasFieldCorrection -d 3 -i mc_func.nii.gz -o N4_${input_file} -c [100x100x100,0.0001] -b [$b_val,3] -s 2 -x mask_${input_file}
+        N4BiasFieldCorrection -d 3 -i ${input_file} -o N4_${input_file} -c [100x100x100,0.0001] -b [$b_val,3] -s 2 -x mask_${input_file}
         # -c [100x100x100,0.0001] means optimizing at 3 scales, each scale has 100 iterations
         # -b [54,3] means start with 32 points scale (equiv 20mm coil divided by 0.375mm resolution) with 3rd order b-spline
         # -s 2 means scale jump by factor of 2 in each iteration
@@ -27,6 +27,6 @@ BIAS_CORRECTED_IMAGE () {
 
         # Step 3: Applying final mask on 4D motion corrected data to clean the raw time series
         fslmaths N4_${input_file} -mas mask_${input_file} cleaned_${input_file}
-
+        
 
 }
