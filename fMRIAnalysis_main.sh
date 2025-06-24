@@ -92,18 +92,14 @@ do
         run_if_missing  "N4_mc_func.nii.gz" -- BIAS_CORRECTED_IMAGE mc_func.nii.gz 100
         # -b (Inpout #2 in above command) [54,3] means start with 32 points scale (equiv 20mm coil divided by 0.375mm resolution) with 3rd order b-spline
        
-
-
-
-
         log_function_execution "$LOG_DIR" "Checked for presence of spikes in the data on Run Number $run_number acquired using $SequenceName" || exit 1
-        run_if_missing "spikecountTC.1D" -- CHECK_SPIKES mc_func+orig
+        run_if_missing "before_despiking_spikecountTC.1D" -- CHECK_SPIKES mc_func+orig
 
-        log_function_execution "$LOG_DIR" "Temporal SNR estimated on Run Number $run_number acquired using $SequenceName" || exit 1
-        run_if_missing  "tSNR_mc_func.nii.gz" "tSNR_mc_func+orig.HEAD" "tSNR_mc_func+orig.BRIK" -- TEMPORAL_SNR_using_AFNI mc_func+orig
-  
+        log_function_execution "$LOG_DIR" "Checking for Spikes and Despiking Run Number $run_number acquired using $SequenceName" || exit 1
+        run_if_missing  "despike_cleaned_N4_mc_func.nii.gz" -- DESPIKE despike_cleaned_N4_mc_func.nii.gz cleaned_N4_mc_func.nii.gz
+                
         log_function_execution "$LOG_DIR" "Smoothing using FSL executed on Run Number $run_number acquired using $SequenceName" || exit 1
-        run_if_missing  "sm_mc_func.nii.gz" -- SMOOTHING_using_FSL mc_func.nii.gz
+        run_if_missing  "sm_despike_cleaned_N4_mc_func.nii.gz" -- SMOOTHING_using_FSL despike_cleaned_N4_mc_func.nii.gz
 
         log_function_execution "$LOG_DIR" "Signal Change Map created for Run Number $run_number acquired using $SequenceName" || exit 1
   

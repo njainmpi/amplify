@@ -2,6 +2,15 @@
 
 
 CHECK_SPIKES () {
+     
     3dToutcount -automask -fraction -polort 3 -legendre $1 > spikecountTC.1D
-    fsl_tsplot -i spikecountTC.1D -o spikecountTC -t 'spike count' -x $Runid'_'$FunctionalRunName -y 'fraction of voxels' -h 650 -w 1800
+    fsl_tsplot -i before_despiking_spikecountTC.1D -o before_despiking_spikecountTC -t 'spike count' -x $Runid'_'$FunctionalRunName -y 'fraction of voxels' -h 650 -w 1800
+}
+
+
+DESPIKE () {
+
+    3dDespike -prefix $1 -ssave rest_spikemap.nii.gz -NEW $2 -localedit
+    3dToutcount -automask -fraction -polort 3 -legendre $1 > spikecountTC.1D
+    fsl_tsplot -i after_despiking_spikecountTC.1D -o after_despiking_spikecountTC -t 'spike count' -x $Runid'_'$FunctionalRunName -y 'fraction of voxels' -h 650 -w 1800
 }
