@@ -82,25 +82,76 @@ do
         run_if_missing "G1_cp.nii.gz" -- BRUKER_to_NIFTI "$datapath" "$run_number" "$datapath/$run_number/method"
         echo "This data is acquired using $SequenceName"
 
+
+        ## Function to perform motion correction
+
+        echo ""
+        echo ""
+        echo "Performing Step 1: Motion Correction"
+        echo ""
+        echo ""
         log_function_execution "$LOG_DIR" "Motion Correction using AFNI executed on Run Number $run_number acquired using $SequenceName" || exit 1
         run_if_missing "mc_func.nii.gz" "mc_func+orig.HEAD" "mc_func+orig.BRIK" -- MOTION_CORRECTION "$MiddleVolume" G1_cp.nii.gz mc_func
 
+        ## Function to obtain tSNR Maps
+        
+        echo ""
+        echo ""
+        echo "Performing Step 2: Obtaining Mean func, Std func and tSNR Maps"
+        echo ""
+        echo ""
         log_function_execution "$LOG_DIR" "Temporal SNR estimated on Run Number $run_number acquired using $SequenceName" || exit 1
         run_if_missing  "tSNR_mc_func.nii.gz" "tSNR_mc_func+orig.HEAD" "tSNR_mc_func+orig.BRIK" -- TEMPORAL_SNR_using_AFNI mc_func+orig
 
+        ## Function to perform Bias Field Corrections
+        
+        echo ""
+        echo ""
+        echo "Performing Step 3: Performing N4 Bias Field Correction of mean_mc_func"
+        echo ""
+        echo ""
         log_function_execution "$LOG_DIR" "N4Bias Field Correction on Run Number $run_number acquired using $SequenceName" || exit 1
-        run_if_missing  "N4_mc_func.nii.gz" -- BIAS_CORRECTED_IMAGE mc_func.nii.gz 100
+        run_if_missing  "N4_mc_func.nii.gz" -- BIAS_CORRECTED_IMAGE mean_mc_func.nii.gz 100
         # -b (Inpout #2 in above command) [54,3] means start with 32 points scale (equiv 20mm coil divided by 0.375mm resolution) with 3rd order b-spline
        
+        ## Function to Check for Spikes
+        
+        echo ""
+        echo ""
+        echo "Performing Step 4: Checking presence of spikes in the data"
+        echo ""
+        echo ""
         log_function_execution "$LOG_DIR" "Checked for presence of spikes in the data on Run Number $run_number acquired using $SequenceName" || exit 1
         run_if_missing "before_despiking_spikecountTC.1D" -- CHECK_SPIKES mc_func+orig
 
+        ## Function to remove spikes from the data
+        
+        echo ""
+        echo ""
+        echo "Performing Step 5: Removing spikes from the data"
+        echo ""
+        echo ""
         log_function_execution "$LOG_DIR" "Checking for Spikes and Despiking Run Number $run_number acquired using $SequenceName" || exit 1
         run_if_missing  "despike_cleaned_N4_mc_func.nii.gz" -- DESPIKE despike_cleaned_N4_mc_func.nii.gz cleaned_N4_mc_func.nii.gz
                 
+        ## Function to perform Smoothing and clean the data to get it ready for estimating Signal change maps        
+        
+        echo ""
+        echo ""
+        echo "Performing Step 6: Smoothing of the data - 1 or 2 voxel smoothing"
+        echo ""
+        echo ""
         log_function_execution "$LOG_DIR" "Smoothing using FSL executed on Run Number $run_number acquired using $SequenceName" || exit 1
         run_if_missing  "sm_despike_cleaned_N4_mc_func.nii.gz" -- SMOOTHING_using_FSL despike_cleaned_N4_mc_func.nii.gz
 
+
+        ##Function for estimating Signal Change Maps
+        
+        echo ""
+        echo ""
+        echo "Performing Step 7: Estimating Signal Change Maps"
+        echo ""
+        echo ""
         log_function_execution "$LOG_DIR" "Signal Change Map created for Run Number $run_number acquired using $SequenceName" || exit 1
   
         if [[ "$SequenceName" == *"functionalEPI"* ]]; then
@@ -112,5 +163,14 @@ do
         else
             echo "Unknown sequence type: $SequenceName — skipping SIGNAL_CHANGE_MAPS."
         fi
+
+        ##Function to perform coregistration and displaying Signal Change Maps with anatomical underlay
+
+        echo ""
+        echo ""
+        echo "Performing Step 8: Estimating Transformation Matrix and Coregistration of the data "
+        echo ""
+        echo ""
+        COREGISTRATION cleaned_N4_mean_mc_func.nii.gz anatomy.nii.gz
     fi
 done
