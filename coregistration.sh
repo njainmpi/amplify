@@ -17,24 +17,3 @@ COREGISTRATION () {
 
 
 }
-
-
-
-
-# Loop until user is satisfied
-while true; do
-    COREGISTRATION
-
-    read -p "Are you happy with the registration? (yes/no): " response
-
-    if [[ "$response" == "yes" || "$response" == "y" ]]; then
-        echo "Proceeding to the next step..."
-        break
-    else
-        echo "Re-running coregistration..."
-    fi
-done
-
-# Add the next steps here
-echo "Continuing with the rest of the pipeline..."
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      
