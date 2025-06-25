@@ -1,5 +1,6 @@
 #!/bin/bash 
 
+
 source ./bias_corrected_image.sh
 source ./bias_field_correction.sh
 source ./check_spikes.sh
@@ -14,4 +15,4 @@ source ./signal_change_map.sh
 source ./smoothing_using_fsl.sh
 source ./temporal_snr_using_afni.sh
 source ./temporal_snr_using_fsl.sh
-bash ../fMRI_analysis_pipeline/toolbox_name.sh
+bash ./toolbox_name.sh

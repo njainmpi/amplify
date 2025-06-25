@@ -7,7 +7,25 @@
 
 #01.04.2025: Intial Script Planned, all functions called through external script
 
-source ./All_functions_to_be_called.sh #converting data from either Bruker or Dicom format to NIFTI format
+bash ./toolbox_name.sh
+source ./log_execution.sh
+source ./missing_run.sh
+source ./folder_existence_function.sh
+source ./func_parameters_extraction.sh
+
+source ./bias_corrected_image.sh
+source ./bias_field_correction.sh
+source ./check_spikes.sh
+source ./coregistration.sh
+source ./data_conversion.sh
+source ./motion_correction.sh
+source ./quality_check.sh
+source ./signal_change_map.sh
+source ./smoothing_using_fsl.sh
+source ./temporal_snr_using_afni.sh
+source ./temporal_snr_using_fsl.sh
+
+echo here
 
 ##In order to use awk, you need to convert xlsx file to csv file
 
@@ -15,15 +33,13 @@ root_location="/Volumes/pr_ohlendorf/fMRI"
 
 cd $root_location/RawData
 
-# xlsx2csv Animal_Experiments_Sequences_v2.xlsx Animal_Experiments_Sequences_v2.csv
-
 # Read the CSV file line by line, skipping the header
-awk -F ',' 'NR>2 {print $0}' "Animal_Experiments_Sequences_v4.csv" | while IFS=',' read -r col1 dataset_name project_name sub_project_name structural_name functional_name _
+awk -F ',' 'NR=12 {print $0}' "Animal_Experiments_Sequences.csv" | while IFS=',' read -r col1 dataset_name project_name sub_project_name structural_name functional_name _
 do
     # Trim any extra whitespace
     project_name=$(echo "$project_name" | xargs)
     
-    if [[ "$project_name" == "Project_BLusH_XC_SC" ]]; then
+    if [[ "$project_name" == "Project_MMP9_NJ_MP" ]]; then
         export Project_Name="$project_name"
         export Sub_project_Name="$sub_project_name"
         export Dataset_Name="$dataset_name"
@@ -64,17 +80,19 @@ do
         log_execution "$LOG_DIR" || exit 1
 
 
-        # #conversion for structural data
-        # FUNC_PARAM_EXTARCT $datapath/$structural_run
+        #conversion for structural data
+        FUNC_PARAM_EXTARCT $datapath/$structural_run
                
-        # CHECK_FILE_EXISTENCE "$Path_Analysed_Data/$structural_run""$SequenceName"
-        # cd $Path_Analysed_Data/$structural_run''$SequenceName
+        CHECK_FILE_EXISTENCE "$Path_Analysed_Data/$structural_run""$SequenceName"
+        cd $Path_Analysed_Data/$structural_run''$SequenceName
 
-        # run_if_missing "G1_cp.nii.gz" -- BRUKER_to_NIFTI "$datapath" "$structural_run" "$datapath/$structural_run/method"
-        # echo "This data is acquired using $SequenceName"
+        run_if_missing "G1_cp.nii.gz" -- BRUKER_to_NIFTI "$datapath" "$structural_run" "$datapath/$structural_run/method"
+        echo "This data is acquired using $SequenceName"
 
         #conversion for functional data
         FUNC_PARAM_EXTARCT $datapath/$run_number
+
+        echo $SequenceName
 
         CHECK_FILE_EXISTENCE "$Path_Analysed_Data/$run_number$SequenceName"
         cd $Path_Analysed_Data/$run_number''$SequenceName
@@ -111,7 +129,7 @@ do
         echo ""
         echo ""
         log_function_execution "$LOG_DIR" "N4Bias Field Correction on Run Number $run_number acquired using $SequenceName" || exit 1
-        run_if_missing  "N4_mc_func.nii.gz" -- BIAS_CORRECTED_IMAGE mean_mc_func.nii.gz 100
+        run_if_missing  "cleaned_mc_func.nii.gz" -- BIAS_CORRECTED_IMAGE mean_mc_func.nii.gz 100 mc_func.nii.gz
         # -b (Inpout #2 in above command) [54,3] means start with 32 points scale (equiv 20mm coil divided by 0.375mm resolution) with 3rd order b-spline
        
         ## Function to Check for Spikes
@@ -122,7 +140,7 @@ do
         echo ""
         echo ""
         log_function_execution "$LOG_DIR" "Checked for presence of spikes in the data on Run Number $run_number acquired using $SequenceName" || exit 1
-        run_if_missing "before_despiking_spikecountTC.1D" -- CHECK_SPIKES mc_func+orig
+        run_if_missing "before_despiking_spikecountTC.png" -- CHECK_SPIKES mc_func.nii.gz
 
         ## Function to remove spikes from the data
         
@@ -132,8 +150,9 @@ do
         echo ""
         echo ""
         log_function_execution "$LOG_DIR" "Checking for Spikes and Despiking Run Number $run_number acquired using $SequenceName" || exit 1
-        run_if_missing  "despike_cleaned_N4_mc_func.nii.gz" -- DESPIKE despike_cleaned_N4_mc_func.nii.gz cleaned_N4_mc_func.nii.gz
-                
+        run_if_missing  "despike_cleaned_mc_func.nii.gz" -- DESPIKE despike_cleaned_mc_func.nii.gz cleaned_mc_func.nii.gz
+
+
         ## Function to perform Smoothing and clean the data to get it ready for estimating Signal change maps        
         
         echo ""
@@ -142,27 +161,28 @@ do
         echo ""
         echo ""
         log_function_execution "$LOG_DIR" "Smoothing using FSL executed on Run Number $run_number acquired using $SequenceName" || exit 1
-        run_if_missing  "sm_despike_cleaned_N4_mc_func.nii.gz" -- SMOOTHING_using_FSL despike_cleaned_N4_mc_func.nii.gz
+        run_if_missing  "sm_despike_cleaned_mc_func.nii.gz" -- SMOOTHING_using_FSL despike_cleaned_mc_func.nii.gz mask_mean_mc_func.nii.gz
 
+exit
 
         ##Function for estimating Signal Change Maps
         
-        echo ""
-        echo ""
-        echo "Performing Step 7: Estimating Signal Change Maps"
-        echo ""
-        echo ""
-        log_function_execution "$LOG_DIR" "Signal Change Map created for Run Number $run_number acquired using $SequenceName" || exit 1
+        # echo ""
+        # echo ""
+        # echo "Performing Step 7: Estimating Signal Change Maps"
+        # echo ""
+        # echo ""
+        # log_function_execution "$LOG_DIR" "Signal Change Map created for Run Number $run_number acquired using $SequenceName" || exit 1
   
-        if [[ "$SequenceName" == *"functionalEPI"* ]]; then
-            run_if_missing "Signal_Change_Map.nii.gz" -- \
-            SIGNAL_CHANGE_MAPS mc_func.nii.gz 50 250 "$datapath/$run_number" 5 5 mean_mc_func.nii.gz
-        elif [[ "$SequenceName" == *"FLASH"* ]]; then
-            run_if_missing "Signal_Change_Map.nii.gz" -- \
-            SIGNAL_CHANGE_MAPS mc_func.nii.gz 5 12 "$datapath/$run_number" 5 5 mean_mc_func.nii.gz
-        else
-            echo "Unknown sequence type: $SequenceName — skipping SIGNAL_CHANGE_MAPS."
-        fi
+        # if [[ "$SequenceName" == *"functionalEPI"* ]]; then
+        #     run_if_missing "Signal_Change_Map.nii.gz" -- \
+        #     SIGNAL_CHANGE_MAPS mc_func.nii.gz 50 250 "$datapath/$run_number" 5 5 mean_mc_func.nii.gz
+        # elif [[ "$SequenceName" == *"FLASH"* ]]; then
+        #     run_if_missing "Signal_Change_Map.nii.gz" -- \
+        #     SIGNAL_CHANGE_MAPS mc_func.nii.gz 5 12 "$datapath/$run_number" 5 5 mean_mc_func.nii.gz
+        # else
+        #     echo "Unknown sequence type: $SequenceName — skipping SIGNAL_CHANGE_MAPS."
+        # fi
 
         ##Function to perform coregistration and displaying Signal Change Maps with anatomical underlay
 

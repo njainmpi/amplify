@@ -26,7 +26,7 @@ BIAS_CORRECTED_IMAGE () {
 
 
         # Step 3: Applying final mask on 4D motion corrected data to clean the raw time series
-        fslmaths N4_${input_file} -mas mask_${input_file} cleaned_${input_file}
-        
+        fslmaths N4_${input_file} -mas mask_${input_file} cleaned_N4_${input_file}
+        fslmaths $3 -mas mask_${input_file} cleaned_${3}
 
 }
