@@ -12,8 +12,6 @@ source ./log_execution.sh
 source ./missing_run.sh
 source ./folder_existence_function.sh
 source ./func_parameters_extraction.sh
-
-source ./bias_corrected_image.sh
 source ./bias_field_correction.sh
 source ./check_spikes.sh
 source ./coregistration.sh
@@ -25,21 +23,21 @@ source ./smoothing_using_fsl.sh
 source ./temporal_snr_using_afni.sh
 source ./temporal_snr_using_fsl.sh
 
-echo here
 
 ##In order to use awk, you need to convert xlsx file to csv file
 
-root_location="/Volumes/pr_ohlendorf/fMRI"
+root_location="/Users/njain/Desktop/fMRI"
 
 cd $root_location/RawData
 
+
 # Read the CSV file line by line, skipping the header
-awk -F ',' 'NR=12 {print $0}' "Animal_Experiments_Sequences.csv" | while IFS=',' read -r col1 dataset_name project_name sub_project_name structural_name functional_name _
+awk -F ',' 'NR>1 {print $0}' "Animal_Experiments_Sequences_v4.csv" | while IFS=',' read -r col1 dataset_name project_name sub_project_name structural_name functional_name _
 do
     # Trim any extra whitespace
     project_name=$(echo "$project_name" | xargs)
     
-    if [[ "$project_name" == "Project_MMP9_NJ_MP" ]]; then
+    if [[ "$project_name" == "Project_SeroAVATar_NJ_KR" ]]; then
         export Project_Name="$project_name"
         export Sub_project_Name="$sub_project_name"
         export Dataset_Name="$dataset_name"
@@ -89,6 +87,7 @@ do
         run_if_missing "G1_cp.nii.gz" -- BRUKER_to_NIFTI "$datapath" "$structural_run" "$datapath/$structural_run/method"
         echo "This data is acquired using $SequenceName"
 
+
         #conversion for functional data
         FUNC_PARAM_EXTARCT $datapath/$run_number
 
@@ -96,11 +95,11 @@ do
 
         CHECK_FILE_EXISTENCE "$Path_Analysed_Data/$run_number$SequenceName"
         cd $Path_Analysed_Data/$run_number''$SequenceName
-        
+    
         run_if_missing "G1_cp.nii.gz" -- BRUKER_to_NIFTI "$datapath" "$run_number" "$datapath/$run_number/method"
         echo "This data is acquired using $SequenceName"
 
-
+  
         ## Function to perform motion correction
 
         echo ""
@@ -121,7 +120,7 @@ do
         log_function_execution "$LOG_DIR" "Temporal SNR estimated on Run Number $run_number acquired using $SequenceName" || exit 1
         run_if_missing  "tSNR_mc_func.nii.gz" "tSNR_mc_func+orig.HEAD" "tSNR_mc_func+orig.BRIK" -- TEMPORAL_SNR_using_AFNI mc_func+orig
 
-        ## Function to perform Bias Field Corrections
+        # Function to perform Bias Field Corrections
         
         echo ""
         echo ""
@@ -163,48 +162,48 @@ do
         log_function_execution "$LOG_DIR" "Smoothing using FSL executed on Run Number $run_number acquired using $SequenceName" || exit 1
         run_if_missing  "sm_despike_cleaned_mc_func.nii.gz" -- SMOOTHING_using_FSL despike_cleaned_mc_func.nii.gz mask_mean_mc_func.nii.gz
 
-exit
 
-        ##Function for estimating Signal Change Maps
+        #Function for estimating Signal Change Maps
         
-        # echo ""
-        # echo ""
-        # echo "Performing Step 7: Estimating Signal Change Maps"
-        # echo ""
-        # echo ""
-        # log_function_execution "$LOG_DIR" "Signal Change Map created for Run Number $run_number acquired using $SequenceName" || exit 1
-  
-        # if [[ "$SequenceName" == *"functionalEPI"* ]]; then
-        #     run_if_missing "Signal_Change_Map.nii.gz" -- \
-        #     SIGNAL_CHANGE_MAPS mc_func.nii.gz 50 250 "$datapath/$run_number" 5 5 mean_mc_func.nii.gz
-        # elif [[ "$SequenceName" == *"FLASH"* ]]; then
-        #     run_if_missing "Signal_Change_Map.nii.gz" -- \
-        #     SIGNAL_CHANGE_MAPS mc_func.nii.gz 5 12 "$datapath/$run_number" 5 5 mean_mc_func.nii.gz
-        # else
-        #     echo "Unknown sequence type: $SequenceName — skipping SIGNAL_CHANGE_MAPS."
-        # fi
-
-        ##Function to perform coregistration and displaying Signal Change Maps with anatomical underlay
-
         echo ""
         echo ""
-        echo "Performing Step 8: Estimating Transformation Matrix and Coregistration of the data "
+        echo "Performing Step 7: Estimating Signal Change Maps"
         echo ""
         echo ""
-        
-            # Loop until user is satisfied
-        while true; do
-            COREGISTRATION cleaned_N4_mean_mc_func.nii.gz anatomy.nii.gz
+        log_function_execution "$LOG_DIR" "Signal Change Map created for Run Number $run_number acquired using $SequenceName" || exit 1
 
-            read -p "Are you happy with the registration? (yes/no): " response
-
-        if [[ "$response" == "yes" || "$response" == "y" ]]; then
-            echo "Proceeding to the next step..."
-            break
+        if [[ "$SequenceName" == *"functionalEPI"* ]]; then
+            run_if_missing "Signal_Change_Map.nii.gz" -- \
+            SIGNAL_CHANGE_MAPS cleaned_sm_despike_cleaned_mc_func.nii.gz "$datapath/$run_number" 10 10
+        elif [[ "$SequenceName" == *"FLASH"* ]]; then
+            run_if_missing "Signal_Change_Map.nii.gz" -- \
+            SIGNAL_CHANGE_MAPS mc_func.nii.gz 5 12 "$datapath/$run_number" 5 5 mean_mc_func.nii.gz
         else
-            echo "Re-running coregistration..."
+            echo "Unknown sequence type: $SequenceName — skipping SIGNAL_CHANGE_MAPS."
         fi
-        done
+
+
+        # ##Function to perform coregistration and displaying Signal Change Maps with anatomical underlay
+
+        # echo ""
+        # echo ""
+        # echo "Performing Step 8: Estimating Transformation Matrix and Coregistration of the data "
+        # echo ""
+        # echo ""
+        
+        #     # Loop until user is satisfied
+        # while true; do
+        #     COREGISTRATION cleaned_N4_mean_mc_func.nii.gz anatomy.nii.gz
+
+        #     read -p "Are you happy with the registration? (yes/no): " response
+
+        # if [[ "$response" == "yes" || "$response" == "y" ]]; then
+        #     echo "Proceeding to the next step..."
+        #     break
+        # else
+        #     echo "Re-running coregistration..."
+        # fi
+        # done
 
     fi
 done
