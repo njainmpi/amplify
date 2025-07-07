@@ -49,7 +49,7 @@ COREGISTRATION_ROI () {
     fslmeants -i mc_func.nii.gz -m "${input_name}_to_${ref_name}_cleaned.nii.gz" -o "ts_${input_name}.txt"
     echo -e "Your \033[31mTime Series\033[0m is saved by the name \033[32mts_${input_name}.txt. \033[0m"
 
-    # python ~/Desktop/Github/amplify/time_course_single_subject.py ts_${input_name}.svg ts_${input_name}.txt
+    python $python_script ts_${input_name}.svg ts_${input_name}.txt
     echo -e "Your \033[31mVectorised TS Graph\033[0m is saved by the name \033[32mts_${input_name}.svg. \033[0m"
 }
 
