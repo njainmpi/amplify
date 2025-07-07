@@ -18,14 +18,14 @@ run_if_missing() {
 
     for file in "${files_to_check[@]}"; do
         if [ -f "$file" ]; then
-            echo "Skipping: $file already exists."
+            echo -e "\033[1;32mSkipping: $file already exists.\033[0m"
             all_missing=false
             break
         fi
     done
 
     if $all_missing; then
-        echo "None of ${files_to_check[*]} found. Running: $command_to_run"
+        echo -e "\033[1;31mNone of ${files_to_check[*]} found. Running: $command_to_run\033[0m"
         eval "$command_to_run"
     fi
 }

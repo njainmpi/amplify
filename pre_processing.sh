@@ -22,7 +22,7 @@ source ./signal_change_map.sh
 source ./smoothing_using_fsl.sh
 source ./temporal_snr_using_afni.sh
 source ./temporal_snr_using_fsl.sh
-python_script="~/Desktop/Github/amplify/time_course_single_subject.py"
+python_script="~/Desktop/Github/amplify/"
 
 ##In order to use awk, you need to convert xlsx file to csv file
 
@@ -107,7 +107,7 @@ do
 
         echo ""
         echo ""
-        echo "Performing Step 1: Motion Correction"
+        echo -e "\033[1;33mPerforming Step 1: Motion Correction\033[0m"
         echo ""
         echo ""
         log_function_execution "$LOG_DIR" "Motion Correction using AFNI executed on Run Number $run_number acquired using $SequenceName" || exit 1
@@ -117,7 +117,7 @@ do
         
         echo ""
         echo ""
-        echo "Performing Step 2: Obtaining Mean func, Std func and tSNR Maps"
+        echo -e "\033[1;33mPerforming Step 2: Obtaining Mean func, Std func and tSNR Maps\033[0m"
         echo ""
         echo ""
         log_function_execution "$LOG_DIR" "Temporal SNR estimated on Run Number $run_number acquired using $SequenceName" || exit 1
@@ -127,7 +127,7 @@ do
         
         echo ""
         echo ""
-        echo "Performing Step 3: Performing N4 Bias Field Correction of mean_mc_func"
+        echo -e "\033[1;33mPerforming Step 3: Performing N4 Bias Field Correction of mean_mc_func\033[0m"
         echo ""
         echo ""
         log_function_execution "$LOG_DIR" "N4Bias Field Correction on Run Number $run_number acquired using $SequenceName" || exit 1
@@ -138,7 +138,7 @@ do
         
         echo ""
         echo ""
-        echo "Performing Step 4: Checking presence of spikes in the data"
+        echo -e "\033[1;33mPerforming Step 4: Checking presence of spikes in the data\033[0m"
         echo ""
         echo ""
         log_function_execution "$LOG_DIR" "Checked for presence of spikes in the data on Run Number $run_number acquired using $SequenceName" || exit 1
@@ -148,7 +148,7 @@ do
         
         echo ""
         echo ""
-        echo "Performing Step 5: Removing spikes from the data"
+        echo -e "\033[1;33mPerforming Step 5: Removing spikes from the data\033[0m"
         echo ""
         echo ""
         log_function_execution "$LOG_DIR" "Checking for Spikes and Despiking Run Number $run_number acquired using $SequenceName" || exit 1
@@ -159,7 +159,7 @@ do
         
         echo ""
         echo ""
-        echo "Performing Step 6: Smoothing of the data - 1 or 2 voxel smoothing"
+        echo -e "\033[1;33mPerforming Step 6: Smoothing of the data - 1 or 2 voxel smoothing\033[0m"
         echo ""
         echo ""
         log_function_execution "$LOG_DIR" "Smoothing using FSL executed on Run Number $run_number acquired using $SequenceName" || exit 1
@@ -170,7 +170,7 @@ do
         
         echo ""
         echo ""
-        echo "Performing Step 7: Estimating Signal Change Maps"
+        echo -e "\033[1;33mPerforming Step 7: Estimating Signal Change Maps\033[0m"
         echo ""
         echo ""
         log_function_execution "$LOG_DIR" "Signal Change Map created for Run Number $run_number acquired using $SequenceName" || exit 1
@@ -191,7 +191,7 @@ do
 
         echo ""
         echo ""
-        echo -e "\033[33mPerforming Step 8: Coregistration of Signal Change Maps and Getting Time Courses.\033[0m"
+        echo -e "\033[1;33mPerforming Step 8: Coregistration of Signal Change Maps and Getting Time Courses.\033[0m"
         echo ""
         echo ""
         log_function_execution "$LOG_DIR" "Applying coregistration for Run Number $run_number acquired using $SequenceName" || exit 1
@@ -223,8 +223,8 @@ do
         if [ -f anatomy_to_func.txt ]; then
             echo -e " \033[31mTransformation matrix\033[0m \033[32mexists.\033[0m"
         
-            COREGISTRATION_UPSAMPLING Signal_Change_Map.nii.gz ../${str_for_coreg}*/anatomy.nii.gz anatomy_to_func.txt
- 
+            run_if_missing  "Signal_Change_Map.nii.gz" -- COREGISTRATION_UPSAMPLING Signal_Change_Map.nii.gz ../${str_for_coreg}*/anatomy.nii.gz anatomy_to_func.txt
+             
             echo -e "\033[33mCreate ROIs on Structural Image.\033[0m"
             fsleyes ../${str_for_coreg}*/anatomy.nii.gz
 
