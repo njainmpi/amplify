@@ -49,7 +49,7 @@ COREGISTRATION_ROI () {
     fslmeants -i mc_func.nii.gz -m "${input_name}_to_${ref_name}_cleaned.nii.gz" -o "ts_${input_name}.txt"
     echo -e "Your \033[31mTime Series\033[0m is saved by the name \033[32mts_${input_name}.txt. \033[0m"
 
-    python ~/Desktop/Github/amplify/time_course_single_subject.py ts_${input_name}.svg ts_${input_name}.txt
+    # python ~/Desktop/Github/amplify/time_course_single_subject.py ts_${input_name}.svg ts_${input_name}.txt
     echo -e "Your \033[31mVectorised TS Graph\033[0m is saved by the name \033[32mts_${input_name}.svg. \033[0m"
 }
 
@@ -85,7 +85,8 @@ COREGISTRATION_UPSAMPLING () {
 
     for ((i=0; i<n_vols; i++)); do
         volname=$(printf "vol%04d" "$i")
-        fslroi "$input_4D" "${volname}.nii.gz" "$i" 1
+       
+        fslroi $input_4D ${volname}.nii.gz $i 1
 
         antsApplyTransforms \
             -i "${volname}.nii.gz" \
@@ -97,6 +98,7 @@ COREGISTRATION_UPSAMPLING () {
 
     fslmerge -t Coregistered_SCM.nii.gz coreg_vol*
 
+    echo -e "Your \033[31mCoregistered Signal Change Map\033[0m is saved by the name \033[32mCoregistered_SCM.nii.gz. \033[0m"
     rm -rf coreg_vol0*
     rm -rf vol0*
 }

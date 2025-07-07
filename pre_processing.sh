@@ -26,24 +26,26 @@ source ./temporal_snr_using_fsl.sh
 
 ##In order to use awk, you need to convert xlsx file to csv file
 
-root_location="/Users/njain/Desktop/fMRI"
+root_location="/Volumes/pr_ohlendorf/fMRI"
 
 cd $root_location/RawData
 
 
 # Read the CSV file line by line, skipping the header
-awk -F ',' 'NR>1 {print $0}' "Animal_Experiments_Sequences_v4.csv" | while IFS=',' read -r col1 dataset_name project_name sub_project_name structural_name functional_name _
+awk -F ',' 'NR==12 {print $0}' "Animal_Experiments_Sequences.csv" | while IFS=',' read -r col1 dataset_name project_name sub_project_name structural_name functional_name struc_coregistration _
 do
     # Trim any extra whitespace
     project_name=$(echo "$project_name" | xargs)
     
-    if [[ "$project_name" == "Project_SeroAVATar_NJ_KR" ]]; then
+    if [[ "$project_name" == "Project_MMP9_NJ_MP" ]]; then
         export Project_Name="$project_name"
         export Sub_project_Name="$sub_project_name"
         export Dataset_Name="$dataset_name"
         export structural_run="$structural_name"
         export run_number="$functional_name"
+        export str_for_coreg="$struc_coregistration"
         
+
         # echo $Structural_Data
 
         Path_Raw_Data="$root_location/RawData/$project_name/$sub_project_name"
@@ -84,7 +86,8 @@ do
         CHECK_FILE_EXISTENCE "$Path_Analysed_Data/$structural_run""$SequenceName"
         cd $Path_Analysed_Data/$structural_run''$SequenceName
 
-        run_if_missing "G1_cp.nii.gz" -- BRUKER_to_NIFTI "$datapath" "$structural_run" "$datapath/$structural_run/method"
+        run_if_missing "anatomy.nii.gz" -- BRUKER_to_NIFTI "$datapath" "$structural_run" "$datapath/$structural_run/method"
+        cp G1_cp.nii.gz anatomy.nii.gz
         echo "This data is acquired using $SequenceName"
 
 
@@ -193,7 +196,6 @@ do
         echo ""
         log_function_execution "$LOG_DIR" "Applying coregistration for Run Number $run_number acquired using $SequenceName" || exit 1
 
-
         echo ""
         echo "Description:"
         echo "  This function performs manual alignment (coregistration) between a mean functional image"
@@ -215,36 +217,34 @@ do
         echo "  - The transformation matrix must be saved manually in ITK-SNAP as 'anatomy_to_epi_mean.txt'."
         echo "  - This function uses ANTs (antsApplyTransforms) and FSLeyes. Ensure they are installed and available."
         echo ""
-        echo "Example:"
-        echo "  COREGISTRATION"
-        echo "  COREGISTRATION mask_in_anatomy_space.nii.gz"
+
 
         
-        if [ -f anatomy_to_func_mean.txt ]; then
+        if [ -f anatomy_to_func.txt ]; then
             echo -e " \033[31mTransformation matrix\033[0m \033[32mexists.\033[0m"
         
-            COREGISTRATION_UPSAMPLING Signal_Change_Map.nii.gz ../11anatomy/G1_cp.nii.gz anatomy_to_func_mean.txt
-            
+            COREGISTRATION_UPSAMPLING Signal_Change_Map.nii.gz ../${str_for_coreg}*/anatomy.nii.gz anatomy_to_func.txt
+ 
             echo -e "\033[33mCreate ROIs on Structural Image.\033[0m"
-            fsleyes ..anatomy
+            fsleyes ../${str_for_coreg}*/anatomy.nii.gz
 
             for roi_file in roi*; do
                 
                 # Skip if no files match (avoid literal 'roi*' when no match)
                 [ -e "$roi_file" ] || continue
 
-                echo "Running coregistration on $roi_file"
-                COREGISTRATION_ROI "$roi_file" cleaned_N4_mean_mc_func.nii.gz anatomy_to_func_mean.txt
+                echo -e "\033[31mRunning coregistration\033[0m on \033[32m$roi_file\033[0m"
+                COREGISTRATION_ROI "$roi_file" cleaned_N4_mean_mc_func.nii.gz anatomy_to_func.txt
             done
 
         else
-            echo -e " Your transformation file does not exist. Create a new one using ITK-Snap."
-            echo -e " Please save your \033[31mtransformation matrix\033[0m as: \033[32manatomy_to_func_mean.txt\033[0m"
+            echo -e " \033[31mYour transformation file does not exist. Create a new one using ITK-Snap.\033[0m"
+            echo -e " Please save your \033[31mtransformation matrix\033[0m as: \033[32manatomy_to_func.txt\033[0m"
             
             return
         fi
     
-
+exit
 
 
 
