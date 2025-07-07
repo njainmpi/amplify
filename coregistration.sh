@@ -1,19 +1,102 @@
 #!/bin/bash
 
-COREGISTRATION () {
 
 
-    echo "Please save your transformation matrix by the name 'anatomy_to_epi_mean.txt' "
+COREGISTRATION_ROI () {
     
-    # Step 1: Launch ITK-SNAP to align manually
-    itksnap -g ${1} -o ${2}
+   
+    # Help Message
+    if [[ $# -lt 3 || $1 == "--help" || $1 == "-h" ]]; then
+        echo "Usage: COREGISTRATION_ROI <input_roi> <ref_image> <transform>"
+        echo ""
+        echo "Description:"
+        echo "  Applies a spatial transformation to an ROI image, thresholds the transformed ROI,"
+        echo "  and extracts the mean time series from a functional image using the cleaned ROI mask."
+        echo ""
+        echo "Positional Arguments:"
+        echo "  input_roi    = Path to ROI image marked on the structural image"
+        echo "  ref_image    = Mean functional image where you want to move your ROI"
+        echo "  transform    = Transformation matrix (e.g., from ANTs registration)"
+        echo ""
+        echo "Example:"
+        echo "  COREGISTRATION_ROI roi.nii.gz mean_func.nii.gz transformation_matrix.txt"
+        return
+    fi
 
-    # Step 2: Apply the transformation
-    antsApplyTransforms -d 3 -i ${1} -r ${2} -o epi_mean_to_anatomy.nii.gz -t [anatomy_to_epi_mean.txt,1] -n BSpline
+    # Assign input parameters
+    input_roi="$1"
+    ref_image="$2"
+    transform="$3"
+    
+    input_name=$(basename "${input_roi%.nii.gz}")
+    ref_name="${ref_image%.nii.gz}"
 
-    # Step 3: Visualize result in FSLeyes
-    fsleyes epi_mean_to_anatomy.nii.gz ${1}
+    # Apply transform
+    antsApplyTransforms \
+        -i "$input_roi" \
+        -r "$ref_image" \
+        -o "${input_name}_to_${ref_name}.nii.gz" \
+        -t "$transform" \
+        -n BSpline
 
 
+    echo -e "Your \033[31mCoregistered ROI\033[0m is saved by the name \033[32m${input_name}_to_${ref_name}.nii.gz\033[0m"
 
+    # Threshold transformed ROI
+    fslmaths "${input_name}_to_${ref_name}.nii.gz" -thr 0.4 -uthr 1.1 "${input_name}_to_${ref_name}_cleaned.nii.gz"
+
+    # Extract time series
+    fslmeants -i mc_func.nii.gz -m "${input_name}_to_${ref_name}_cleaned.nii.gz" -o "ts_${input_name}.txt"
+    echo -e "Your \033[31mTime Series\033[0m is saved by the name \033[32mts_${input_name}.txt. \033[0m"
+
+    python ~/Desktop/Github/amplify/time_course_single_subject.py ts_${input_name}.svg ts_${input_name}.txt
+    echo -e "Your \033[31mVectorised TS Graph\033[0m is saved by the name \033[32mts_${input_name}.svg. \033[0m"
+}
+
+
+COREGISTRATION_UPSAMPLING () {
+    # Help Message
+    if [[ "$1" == "--help" || "$1" == "-h" ]]; then
+        echo "Usage: COREGISTRATION_UPSAMPLING"
+        echo ""
+        echo "Description:"
+        echo "  This function performs volume-wise upsampling of a 3D/ 4D functional image by:"
+        echo "  applying an inverse spatial transform to bring each volume into anatomical space."
+        echo ""
+        echo "Positional Arguements (can be modified inside the function):"
+        echo "  input_4D     = Signal_Change_Map.nii.gz (4D functional ROI image)"
+        echo "  ref_image    = ../11anatomy/G1_cp.nii.gz (anatomical reference image)"
+        echo "  transform    = anatomy_to_func.txt (transform matrix, used in inverse mode)"
+        echo ""
+        echo "Output:"
+        echo "  - Coregistered 3D/ 4D image: Coregistered_SCM.nii.gz"
+        echo ""
+        echo "Note:"
+        echo "  Ensure FSL and ANTs are sourced and available in your environment."
+        return
+    fi
+
+    # Function body
+    input_4D="$1"
+    ref_image="$2"
+    transform="$3"
+
+    n_vols=$(fslval "$input_4D" dim4)
+
+    for ((i=0; i<n_vols; i++)); do
+        volname=$(printf "vol%04d" "$i")
+        fslroi "$input_4D" "${volname}.nii.gz" "$i" 1
+
+        antsApplyTransforms \
+            -i "${volname}.nii.gz" \
+            -r "$ref_image" \
+            -o "coreg_${volname}_anatomy.nii.gz" \
+            -t "[$transform,1]" \
+            -n BSpline
+    done
+
+    fslmerge -t Coregistered_SCM.nii.gz coreg_vol*
+
+    rm -rf coreg_vol0*
+    rm -rf vol0*
 }
