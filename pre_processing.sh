@@ -183,6 +183,71 @@ do
         fi
 
 
+        #Function for coregistration of Signal change maps to anatomical and 
+        #extraction of time courses
+
+        echo ""
+        echo ""
+        echo -e "\033[33mPerforming Step 8: Coregistration of Signal Change Maps and Getting Time Courses.\033[0m"
+        echo ""
+        echo ""
+        log_function_execution "$LOG_DIR" "Applying coregistration for Run Number $run_number acquired using $SequenceName" || exit 1
+
+
+        echo ""
+        echo "Description:"
+        echo "  This function performs manual alignment (coregistration) between a mean functional image"
+        echo "  and a high-resolution anatomical image using ITK-SNAP for visualization and ANTs for transformation."
+        echo ""
+        echo "Steps:"
+        echo "  1. Opens ITK-SNAP with 'mean_func' as the background and 'anatomy.nii.gz' as the overlay image."
+        echo "     You are expected to perform a manual rigid alignment and save the transformation matrix"
+        echo "     as 'anatomy_to_epi_mean.txt'."
+        echo ""
+        echo "  2. Applies the saved transformation using ANTs to bring 'mean_func' into anatomical space."
+        echo "     Output file is saved as 'epi_mean_to_anatomy.nii.gz'."
+        echo ""
+        echo "  3. Optionally visualizes the result in FSLeyes, overlaid with another image if provided"
+        echo "     as a positional argument to this function."
+        echo ""
+        echo "Notes:"
+        echo "  - Ensure 'mean_func' and 'anatomy.nii.gz' are in your working directory."
+        echo "  - The transformation matrix must be saved manually in ITK-SNAP as 'anatomy_to_epi_mean.txt'."
+        echo "  - This function uses ANTs (antsApplyTransforms) and FSLeyes. Ensure they are installed and available."
+        echo ""
+        echo "Example:"
+        echo "  COREGISTRATION"
+        echo "  COREGISTRATION mask_in_anatomy_space.nii.gz"
+
+        
+        if [ -f anatomy_to_func_mean.txt ]; then
+            echo -e " \033[31mTransformation matrix\033[0m \033[32mexists.\033[0m"
+        
+            COREGISTRATION_UPSAMPLING Signal_Change_Map.nii.gz ../11anatomy/G1_cp.nii.gz anatomy_to_func_mean.txt
+            
+            echo -e "\033[33mCreate ROIs on Structural Image.\033[0m"
+            fsleyes ..anatomy
+
+            for roi_file in roi*; do
+                
+                # Skip if no files match (avoid literal 'roi*' when no match)
+                [ -e "$roi_file" ] || continue
+
+                echo "Running coregistration on $roi_file"
+                COREGISTRATION_ROI "$roi_file" cleaned_N4_mean_mc_func.nii.gz anatomy_to_func_mean.txt
+            done
+
+        else
+            echo -e " Your transformation file does not exist. Create a new one using ITK-Snap."
+            echo -e " Please save your \033[31mtransformation matrix\033[0m as: \033[32manatomy_to_func_mean.txt\033[0m"
+            
+            return
+        fi
+    
+
+
+
+
     fi
 done
 
