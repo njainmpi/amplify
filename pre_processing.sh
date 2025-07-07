@@ -22,7 +22,7 @@ source ./signal_change_map.sh
 source ./smoothing_using_fsl.sh
 source ./temporal_snr_using_afni.sh
 source ./temporal_snr_using_fsl.sh
-
+python_script="~/Desktop/Github/amplify/time_course_single_subject.py"
 
 ##In order to use awk, you need to convert xlsx file to csv file
 
