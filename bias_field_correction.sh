@@ -13,8 +13,9 @@ BIAS_CORRECTED_IMAGE () {
         echo ""
         echo ""
 
-        echo "Please save the mask by the name 'mask_${input_file}'. "
-        fsleyes ${input_file} initial_${input_file} 
+        # echo "Please save the mask by the name 'mask_${input_file}'. "
+        cp initial_mean_mc_func.nii.gz mask_${input_file}
+        fsleyes ${input_file} mask_${input_file}
 
         # Step 2: Coil (B1) inhomogeneity correction of EPI using N4 method 
         # Here we will be using the mask that we created on mean functional image.
