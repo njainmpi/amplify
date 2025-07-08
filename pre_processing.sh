@@ -22,14 +22,16 @@ source ./signal_change_map.sh
 source ./smoothing_using_fsl.sh
 source ./temporal_snr_using_afni.sh
 source ./temporal_snr_using_fsl.sh
-python_script="~/Desktop/Github/amplify/"
+
+path_for_python_script_time_course="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ts_roi_python_script=$path_for_python_script_time_course/time_course_single_subject.py
+
 
 ##In order to use awk, you need to convert xlsx file to csv file
 
 root_location="/Volumes/pr_ohlendorf/fMRI"
 
 cd $root_location/RawData
-
 
 # Read the CSV file line by line, skipping the header
 awk -F ',' 'NR==12 {print $0}' "Animal_Experiments_Sequences.csv" | while IFS=',' read -r col1 dataset_name project_name sub_project_name structural_name functional_name struc_coregistration _
