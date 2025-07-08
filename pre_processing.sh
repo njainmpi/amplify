@@ -36,6 +36,12 @@ cd $root_location/RawData
 # Read the CSV file line by line, skipping the header
 awk -F ',' 'NR==12 {print $0}' "Animal_Experiments_Sequences.csv" | while IFS=',' read -r col1 dataset_name project_name sub_project_name structural_name functional_name struc_coregistration _
 do
+    
+    # Prepare log file name per dataset
+    logfile="log_${dataset_name}_FuncScan_${functional_name}_Dated_$(date +%Y%m%d_%H%M%S).txt"
+
+    # Start capturing terminal output to a log file
+    {
     # Trim any extra whitespace
     project_name=$(echo "$project_name" | xargs)
     
@@ -52,7 +58,7 @@ do
 
         Path_Raw_Data="$root_location/RawData/$project_name/$sub_project_name"
         Path_Analysed_Data="$root_location/AnalysedData/$project_name/$sub_project_name/$Dataset_Name"
-    
+ 
         # Add your further processing steps here
 
         datapath=$(find "$Path_Raw_Data" -type d -name "*${Dataset_Name}*" 2>/dev/null)
@@ -235,7 +241,7 @@ do
                 # fsleyes ../${str_for_coreg}*/anatomy.nii.gz
             fi
 
-            for roi_file in roi*; do
+            for roi_file in ../${str_for_coreg}*/roi*; do
                 
                 # Skip if no files match (avoid literal 'roi*' when no match)
                 [ -e "$roi_file" ] || continue
@@ -251,6 +257,13 @@ do
             return
         fi
     fi
+
+    } | tee "$logfile"  # Save all output from this block and also show on screen
+
+    # Clear terminal after each dataset
+    clear
+
+mv $logfile All_Logs/.
 done
 
 
