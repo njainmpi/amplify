@@ -14,9 +14,16 @@ BIAS_CORRECTED_IMAGE () {
         echo ""
 
         # echo "Please save the mask by the name 'mask_${input_file}'. "
-        cp initial_mean_mc_func.nii.gz mask_${input_file}
-        fsleyes ${input_file} mask_${input_file}
-
+        
+        if [ -f mask_${input_file} ]; then 
+                echo -e "\033[32mCleaned Mask already exists.\033[0m "
+                echo -e "\033[32mConfirm the correctness of mask before proceeding to data analysis.\033[0m "
+                fsleyes ${input_file} mask_${input_file}
+        else 
+                echo -e "\033[31mCleaned Mask doesn't exist. Please make a cleaned mask first.\033[0m"
+                cp initial_mean_mc_func.nii.gz mask_${input_file}
+                fsleyes ${input_file} mask_${input_file}
+        fi 
         # Step 2: Coil (B1) inhomogeneity correction of EPI using N4 method 
         # Here we will be using the mask that we created on mean functional image.
 
