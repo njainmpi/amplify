@@ -227,8 +227,13 @@ do
         
             run_if_missing  "Signal_Change_Map.nii.gz" -- COREGISTRATION_UPSAMPLING Signal_Change_Map.nii.gz ../${str_for_coreg}*/anatomy.nii.gz anatomy_to_func.txt
              
-            echo -e "\033[33mCreate ROIs on Structural Image.\033[0m"
-            fsleyes ../${str_for_coreg}*/anatomy.nii.gz
+            if ls ../${str_for_coreg}*/roi* 1> /dev/null 2>&1; then
+                echo -e "\033[32mROI exists. Proceeding for ROI analysis\033[0m"
+            else
+                echo -e "\033[31mROI does not exist.\033[0m"
+                echo -e "\033[31mCreate ROIs on Structural Image.\033[0m"
+                # fsleyes ../${str_for_coreg}*/anatomy.nii.gz
+            fi
 
             for roi_file in roi*; do
                 
@@ -245,11 +250,6 @@ do
             
             return
         fi
-    
-exit
-
-
-
     fi
 done
 
