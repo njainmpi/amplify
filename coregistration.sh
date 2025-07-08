@@ -27,7 +27,7 @@ COREGISTRATION_ROI () {
     input_roi="$1"
     ref_image="$2"
     transform="$3"
-    
+
     input_name=$(basename "${input_roi%.nii.gz}")
     ref_name="${ref_image%.nii.gz}"
 
@@ -49,7 +49,7 @@ COREGISTRATION_ROI () {
     fslmeants -i mc_func.nii.gz -m "${input_name}_to_${ref_name}_cleaned.nii.gz" -o "ts_${input_name}.txt"
     echo -e "Your \033[31mTime Series\033[0m is saved by the name \033[32mts_${input_name}.txt. \033[0m"
 
-    python $python_script ts_${input_name}.svg ts_${input_name}.txt
+    python $ts_roi_python_script ts_${input_name}.svg ts_${input_name}.txt
     echo -e "Your \033[31mVectorised TS Graph\033[0m is saved by the name \033[32mts_${input_name}.svg. \033[0m"
 }
 
