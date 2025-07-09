@@ -67,7 +67,7 @@ SIGNAL_CHANGE_MAPS () {
         # Step 3: Combine all the processed blocks into a single 4D image
         3dTcat -prefix Signal_Change_Map_premask.nii.gz "${processed_images[@]}"
 
-        fslmaths Signal_Change_Map_premask.nii.gz -mas mask_mean_mc_func.nii.gz Signal_Change_Map
+        fslmaths Signal_Change_Map_premask.nii.gz -mas mask_mean_mc_func.nii.gz Signal_Change_Map.nii.gz
 
         echo "All blocks processed and combined into final 4D image: Signal_Change_Map.nii.gz"
 
