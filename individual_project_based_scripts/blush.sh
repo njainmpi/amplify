@@ -268,7 +268,13 @@ do
     # Clear terminal after each dataset
     clear
 
-mv $logfile All_Logs/.
+    if [ -d $All_Logs/$project_name ]; then
+
+        mv $logfile All_Logs/$project_name.
+    else 
+        mkdir All_Logs/$project_name.
+        mv $logfile All_Logs/$project_name.
+    fi
 done
 
 
