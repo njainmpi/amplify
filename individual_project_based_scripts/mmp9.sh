@@ -45,7 +45,7 @@ matched_path=$(awk -F',' -v id="$identity" '$2 == id {print $3}' "$datafile")
 
 echo "Running data anaylysis for $(whoami) on system $(hostname) with $matched_path as root location."
 
-root_location="/Volumes/pr_ohlendorf/fMRI"
+root_location=$matched_path
 
 cd $root_location/RawData
 
