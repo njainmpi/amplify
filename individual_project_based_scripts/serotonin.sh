@@ -39,7 +39,7 @@ root_location="/Volumes/pr_ohlendorf/fMRI"
 cd $root_location/RawData
 
 # Read the CSV file line by line, skipping the header
-awk -F ',' 'NR>2 {print $0}' "Animal_Experiments_Sequences.csv" | while IFS=',' read -r col1 dataset_name project_name sub_project_name structural_name functional_name struc_coregistration _
+awk -F ',' 'NR==48 {print $0}' "Animal_Experiments_Sequences.csv" | while IFS=',' read -r col1 dataset_name project_name sub_project_name structural_name functional_name struc_coregistration _
 do
     
     # Prepare log file name per dataset
