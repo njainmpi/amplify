@@ -6,7 +6,7 @@ BIAS_CORRECTED_IMAGE () {
         local b_val=$2
 
         # Step 1: Creating a mask from 3D mean image
-        fslmaths ${input_file} -thrp 30 -bin initial_${input_file}.nii.gz
+        fslmaths ${input_file} -thrp 30 -bin initial_${input_file}
 
         # Here we are cleaning the automatic mask to suit it more to the mean EPI image
         echo "Modify the mask"
