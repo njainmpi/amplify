@@ -41,7 +41,18 @@ identity="$(whoami)@$(hostname)"
 datafile="individual_project_based_scripts/path_definition.txt"  # replace with actual path
 
 # Extract the matching path (3rd column)
-matched_path=$(awk -F',' -v id="$identity" '$2 == id {print $3}' "$datafile")
+
+matched_path=$(awk -v id="$identity" -F',' '
+    $2 == id {
+        path = $3
+        for (i=4; i<=NF; i++) {
+            path = path "," $i
+        }
+        print path
+    }
+' "$datafile")
+
+echo "$matched_path"
 
 echo "Running data anaylysis for $(whoami) on system $(hostname) with $matched_path as root location."
 
