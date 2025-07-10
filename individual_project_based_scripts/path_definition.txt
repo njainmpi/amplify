@@ -3,4 +3,4 @@
 3.yma,
 4.rohlendorf,
 5.mpethe,
-6,njain@WinKS235-51,/run/user/6631/gvfs/smb-share:server=wks3,share=pr_ohlendorf/fMRI 
+6,njain@WinKS235-51,/run/user/6631/gvfs/smb-share:server=wks3,share=pr_ohlendorf/fMRI

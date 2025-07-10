@@ -56,9 +56,9 @@ echo "$matched_path"
 
 echo "Running data anaylysis for $(whoami) on system $(hostname) with $matched_path as root location."
 
-root_location=$matched_path
+root_location="$matched_path"
 
-cd $root_location/RawData
+cd "$root_location/RawData"
 
 # Read the CSV file line by line, skipping the header
 awk -F ',' 'NR==48 {print $0}' "Animal_Experiments_Sequences.csv" | while IFS=',' read -r col1 dataset_name project_name sub_project_name structural_name functional_name struc_coregistration _
