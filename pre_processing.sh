@@ -7,34 +7,61 @@
 
 #01.04.2025: Intial Script Planned, all functions called through external script
 
-bash ./toolbox_name.sh
-source ./log_execution.sh
-source ./missing_run.sh
-source ./folder_existence_function.sh
-source ./func_parameters_extraction.sh
-source ./bias_field_correction.sh
-source ./check_spikes.sh
-source ./coregistration.sh
-source ./data_conversion.sh
-source ./motion_correction.sh
-source ./quality_check.sh
-source ./signal_change_map.sh
-source ./smoothing_using_fsl.sh
-source ./temporal_snr_using_afni.sh
-source ./temporal_snr_using_fsl.sh
 
+bash ../toolbox_name.sh
+source ../log_execution.sh
+source ../missing_run.sh
+source ../folder_existence_function.sh
+source ../func_parameters_extraction.sh
+source ../bias_field_correction.sh
+source ../check_spikes.sh
+source ../coregistration.sh
+source ../data_conversion.sh
+source ../motion_correction.sh
+source ../quality_check.sh
+source ../signal_change_map.sh
+source ../smoothing_using_fsl.sh
+source ../temporal_snr_using_afni.sh
+source ../temporal_snr_using_fsl.sh
+
+currentpath="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+cd ..
 path_for_python_script_time_course="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ts_roi_python_script=$path_for_python_script_time_course/time_course_single_subject.py
 
+echo $ts_roi_python_script
 
 ##In order to use awk, you need to convert xlsx file to csv file
 
-root_location="/Volumes/pr_ohlendorf/fMRI"
 
-cd $root_location/RawData
+identity="$(whoami)@$(hostname)"
+
+# Path to your data file
+datafile="individual_project_based_scripts/path_definition.txt"  # replace with actual path
+
+# Extract the matching path (3rd column)
+
+matched_path=$(awk -v id="$identity" -F',' '
+    $2 == id {
+        path = $3
+        for (i=4; i<=NF; i++) {
+            path = path "," $i
+        }
+        print path
+    }
+' "$datafile")
+
+echo "$matched_path"
+
+echo "Running data anaylysis for $(whoami) on system $(hostname) with $matched_path as root location."
+
+root_location="$matched_path"
+
+cd "$root_location/RawData"
 
 # Read the CSV file line by line, skipping the header
-awk -F ',' 'NR==12 {print $0}' "Animal_Experiments_Sequences.csv" | while IFS=',' read -r col1 dataset_name project_name sub_project_name structural_name functional_name struc_coregistration _
+awk -F ',' 'NR>2 {print $0}' "Animal_Experiments_Sequences.csv" | while IFS=',' read -r col1 dataset_name project_name sub_project_name structural_name functional_name struc_coregistration _
 do
     
     # Prepare log file name per dataset
@@ -45,7 +72,7 @@ do
     # Trim any extra whitespace
     project_name=$(echo "$project_name" | xargs)
     
-    if [[ "$project_name" == "Project_MMP9_NJ_MP" ]]; then
+    if [[ "$project_name" == "Project_SeroAVATar_NJ_KR" ]]; then
         export Project_Name="$project_name"
         export Sub_project_Name="$sub_project_name"
         export Dataset_Name="$dataset_name"
@@ -150,7 +177,7 @@ do
         echo ""
         echo ""
         log_function_execution "$LOG_DIR" "Checked for presence of spikes in the data on Run Number $run_number acquired using $SequenceName" || exit 1
-        run_if_missing "before_despiking_spikecountTC.png" -- CHECK_SPIKES mc_func.nii.gz
+        run_if_missing "before_despiking_spikecountTC.png" -- CHECK_SPIKES cleaned_mc_func.nii.gz
 
         ## Function to remove spikes from the data
         
@@ -231,14 +258,21 @@ do
         if [ -f anatomy_to_func.txt ]; then
             echo -e " \033[31mTransformation matrix\033[0m \033[32mexists.\033[0m"
         
-            run_if_missing  "Signal_Change_Map.nii.gz" -- COREGISTRATION_UPSAMPLING Signal_Change_Map.nii.gz ../${str_for_coreg}*/anatomy.nii.gz anatomy_to_func.txt
+            run_if_missing  "Coregistered_SCM.nii.gz" -- COREGISTRATION_UPSAMPLING Signal_Change_Map.nii.gz ../${str_for_coreg}*/anatomy.nii.gz anatomy_to_func.txt
              
             if ls ../${str_for_coreg}*/roi* 1> /dev/null 2>&1; then
                 echo -e "\033[32mROI exists. Proceeding for ROI analysis\033[0m"
             else
                 echo -e "\033[31mROI does not exist.\033[0m"
                 echo -e "\033[31mCreate ROIs on Structural Image.\033[0m"
-                # fsleyes ../${str_for_coreg}*/anatomy.nii.gz
+
+                echo -e "\033[31mCreate Mask on Structural Image to filter Signal Change Maps.\033[0m"
+                fslmaths anatomy.nii.gz -thrp 30 -bin initial_anatomy
+
+                echo -e "\033[31mSave it by the name cleaned_anatomy_mask\033[0m"
+
+                fsleyes ../${str_for_coreg}*/anatomy.nii.gz
+                fslmaths Coregistered_SCM.nii.gz -mas mask_${input_file} cleaned_Coregistered_SCM
             fi
 
             for roi_file in ../${str_for_coreg}*/roi*; do
@@ -257,11 +291,11 @@ do
             return
         fi
     fi
-
+exit
     } | tee "$logfile"  # Save all output from this block and also show on screen
 
     # Clear terminal after each dataset
-    clear
+    # clear
 
 
     if [ -d $All_Logs/$project_name ]; then
@@ -271,7 +305,7 @@ do
         mkdir All_Logs/$project_name.
         mv $logfile All_Logs/$project_name.
     fi
-    
+
 done
 
 
