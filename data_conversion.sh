@@ -33,10 +33,7 @@ DICOM_to_NIFTI () {
 BRUKER_to_NIFTI () {
 echo "Using brkraw to convert Bruker format to NIFTI"
     format="Bruker"
-    source /Users/njain/miniconda3/etc/profile.d/conda.sh
-    conda activate /Users/njain/miniconda3/envs/myenv
     brkraw tonii $1/ -s $2
-    conda deactivate
 
     if grep -q "PVM_NEchoImages" "$3"; then
         NoOfEchoImages=$(awk '/PVM_NEchoImages=/ {print substr($0,20,2)}' $3)
