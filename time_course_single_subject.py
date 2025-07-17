@@ -47,10 +47,40 @@ def plot_voxels(file_list, output_path):
     print(f"Saved: {output_path}")
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("Usage: python plot_voxel_grouped.py <output_file.svg> <input_file1> [input_file2 ...]")
-        sys.exit(1)
+    
 
     output_file = sys.argv[1]
     input_files = sys.argv[2:]
     plot_voxels(input_files, output_file)
+    
+    base_name  = os.path.splitext(output_file)[0]          # strip ".svg"
+    txt_name   = f"{base_name}.txt"
+
+
+    # Number of values in last 20 minutes
+    values_needed = int(20 * 60 / sampling_interval)
+
+    if total_values < values_needed:
+        raise ValueError("Not enough data to cover 20 minutes.")
+
+    last_20_min_values = values[-values_needed:]
+
+    # Compute statistics
+    mean_val = np.mean(last_20_min_values)
+    perc_95_val = np.percentile(last_20_min_values, 95)
+
+    
+    # Create filenames for separate files
+    mean_file = txt_name.replace('.txt', '_mean.txt')
+    perc_file = txt_name.replace('.txt', '_p95.txt')
+
+    # Save mean value
+    with open(mean_file, 'w') as f_mean:
+        f_mean.write(f"{mean_val:.4f}\n")
+
+    # Save 95th percentile value
+    with open(perc_file, 'w') as f_p95:
+        f_p95.write(f"{perc_95_val:.4f}\n")
+
+    print(f"Saved mean to {mean_file}")
+    print(f"Saved 95th percentile to {perc_file}")
