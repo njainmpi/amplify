@@ -61,7 +61,7 @@ root_location="$matched_path"
 cd "$root_location/RawData"
 
 # Read the CSV file line by line, skipping the header
-awk -F ',' 'NR>2 {print $0}' "Animal_Experiments_Sequences.csv" | while IFS=',' read -r col1 dataset_name project_name sub_project_name structural_name functional_name struc_coregistration _
+awk -F ',' 'NR==19 {print $0}' "Animal_Experiments_Sequences_v1.csv" | while IFS=',' read -r col1 dataset_name project_name sub_project_name structural_name functional_name struc_coregistration _
 do
     
     # Prepare log file name per dataset
@@ -177,7 +177,7 @@ do
         echo ""
         echo ""
         log_function_execution "$LOG_DIR" "Checked for presence of spikes in the data on Run Number $run_number acquired using $SequenceName" || exit 1
-        run_if_missing "before_despiking_spikecountTC.png" -- CHECK_SPIKES mc_func.nii.gz
+        run_if_missing "before_despiking_spikecountTC.png" -- CHECK_SPIKES cleaned_mc_func.nii.gz
 
         ## Function to remove spikes from the data
         
@@ -258,14 +258,21 @@ do
         if [ -f anatomy_to_func.txt ]; then
             echo -e " \033[31mTransformation matrix\033[0m \033[32mexists.\033[0m"
         
-            run_if_missing  "Signal_Change_Map.nii.gz" -- COREGISTRATION_UPSAMPLING Signal_Change_Map.nii.gz ../${str_for_coreg}*/anatomy.nii.gz anatomy_to_func.txt
+            run_if_missing  "Coregistered_SCM.nii.gz" -- COREGISTRATION_UPSAMPLING Signal_Change_Map.nii.gz ../${str_for_coreg}*/anatomy.nii.gz anatomy_to_func.txt
              
             if ls ../${str_for_coreg}*/roi* 1> /dev/null 2>&1; then
                 echo -e "\033[32mROI exists. Proceeding for ROI analysis\033[0m"
             else
                 echo -e "\033[31mROI does not exist.\033[0m"
                 echo -e "\033[31mCreate ROIs on Structural Image.\033[0m"
-                # fsleyes ../${str_for_coreg}*/anatomy.nii.gz
+
+                echo -e "\033[31mCreate Mask on Structural Image to filter Signal Change Maps.\033[0m"
+                fslmaths anatomy.nii.gz -thrp 30 -bin initial_anatomy
+
+                echo -e "\033[31mSave it by the name cleaned_anatomy_mask\033[0m"
+
+                fsleyes ../${str_for_coreg}*/anatomy.nii.gz
+                fslmaths Coregistered_SCM.nii.gz -mas mask_${input_file} cleaned_Coregistered_SCM
             fi
 
             for roi_file in ../${str_for_coreg}*/roi*; do
@@ -284,11 +291,11 @@ do
             return
         fi
     fi
-
+exit
     } | tee "$logfile"  # Save all output from this block and also show on screen
 
     # Clear terminal after each dataset
-    clear
+    # clear
 
 
     if [ -d $All_Logs/$project_name ]; then
@@ -298,6 +305,7 @@ do
         mkdir All_Logs/$project_name.
         mv $logfile All_Logs/$project_name.
     fi
+
 done
 
 
