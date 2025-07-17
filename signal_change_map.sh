@@ -27,7 +27,7 @@ SIGNAL_CHANGE_MAPS () {
         base_end=$(( No_of_Vols_in_pre_PACAP_injection - 80 ))
 
         echo $base_start $base_end
-        echo $VolTR
+        echo $VolTR sec
 
 
         # Step 1: Compute the baseline image (mean of the first 600 repetitions)
@@ -78,14 +78,14 @@ SIGNAL_CHANGE_MAPS () {
         mkdir -p "$output_dir"
 
 
-        # Step 5: Extract screenshots for each volume in the final processed 4D image
-        num_volumes=$(3dinfo -nv Signal_Change_Map.nii.gz)  # Get the number of volumes
+        # # Step 5: Extract screenshots for each volume in the final processed 4D image
+        # num_volumes=$(3dinfo -nv Signal_Change_Map.nii.gz)  # Get the number of volumes
 
-        for ((slice_idx=0; slice_idx<slice_count; slice_idx++)); do     
+        # for ((slice_idx=0; slice_idx<slice_count; slice_idx++)); do     
 
-                echo "Making Video for Slice Number $slice_idx"
-                python ~/Desktop/Github/amplify/Making_videos_for_SCM.py $7 Signal_Change_Map.nii.gz $slice_idx
-        done
+        #         echo "Making Video for Slice Number $slice_idx"
+        #         python ~/Desktop/Github/amplify/Making_videos_for_SCM.py $7 Signal_Change_Map.nii.gz $slice_idx
+        # done
 
 
 
