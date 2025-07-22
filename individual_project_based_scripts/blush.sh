@@ -259,7 +259,7 @@ do
         if [ -f anatomy_to_func.txt ]; then
             echo -e " \033[31mTransformation matrix\033[0m \033[32mexists.\033[0m"
         
-            run_if_missing  "Signal_Change_Map.nii.gz" -- COREGISTRATION_UPSAMPLING Signal_Change_Map.nii.gz ../${str_for_coreg}*/anatomy.nii.gz anatomy_to_func.txt
+            run_if_missing  "Coregistered_SCM.nii.gz" -- COREGISTRATION_UPSAMPLING Signal_Change_Map.nii.gz ../${str_for_coreg}*/anatomy.nii.gz anatomy_to_func.txt
              
             if ls ../${str_for_coreg}*/roi* 1> /dev/null 2>&1; then
                 echo -e "\033[32mROI exists. Proceeding for ROI analysis\033[0m"
