@@ -2,6 +2,6 @@
 2.scagun@WinKS235-51,/run/user/3258/gvfs/smb-share:server=wks3,share=pr_ohlendorf/fMRI
 3.yma,
 4.rohlendorf,
-5.mpethe,
+5.mpethe@WinKS235-51,/run/user/3316/gvfs/smb-share:server=wks3,share=pr_ohlendorf/fMRI
 6,njain@WinKS235-51,/run/user/6631/gvfs/smb-share:server=wks3,share=pr_ohlendorf/fMRI
 7,scagun@acacia,/run/user/3258/gvfs/smb-share:server=wks3,share=pr_ohlendorf/fMRI
