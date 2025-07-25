@@ -23,6 +23,7 @@ source ../signal_change_map.sh
 source ../smoothing_using_fsl.sh
 source ../temporal_snr_using_afni.sh
 source ../temporal_snr_using_fsl.sh
+source ../scm_visual.sh
 
 currentpath="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -31,6 +32,10 @@ path_for_python_script_time_course="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd
 ts_roi_python_script=$path_for_python_script_time_course/time_course_single_subject.py
 
 echo $ts_roi_python_script
+
+# Clear terminal before each dataset
+clear
+
 
 ##In order to use awk, you need to convert xlsx file to csv file
 
@@ -55,7 +60,6 @@ matched_path=$(awk -v id="$identity" -F',' '
 echo "$matched_path"
 
 echo "Running data anaylysis for $(whoami) on system $(hostname) with $matched_path as root location."
-
 
 root_location="$matched_path"
 
@@ -202,7 +206,6 @@ do
         run_if_missing  "sm_despike_cleaned_mc_func.nii.gz" -- SMOOTHING_using_FSL despike_cleaned_mc_func.nii.gz mask_mean_mc_func.nii.gz
 
 
-        #Function for estimating Signal Change Maps
         
         echo ""
         echo ""
@@ -210,16 +213,7 @@ do
         echo ""
         echo ""
         log_function_execution "$LOG_DIR" "Signal Change Map created for Run Number $run_number acquired using $SequenceName" || exit 1
-
-        if [[ "$SequenceName" == *"functionalEPI"* ]]; then
-            run_if_missing "Signal_Change_Map.nii.gz" -- \
-            SIGNAL_CHANGE_MAPS cleaned_sm_despike_cleaned_mc_func.nii.gz "$datapath/$run_number" 10 10
-        elif [[ "$SequenceName" == *"FLASH"* ]]; then
-            run_if_missing "Signal_Change_Map.nii.gz" -- \
-            SIGNAL_CHANGE_MAPS mc_func.nii.gz 5 12 "$datapath/$run_number" 5 5 mean_mc_func.nii.gz
-        else
-            echo "Unknown sequence type: $SequenceName — skipping SIGNAL_CHANGE_MAPS."
-        fi
+        Signal_Change_Map sm_despike_cleaned_mc_func.nii.gz "$datapath/$run_number" $baseline_duration_in_min 2 $injection_duration_in_min
 
 
         #Function for coregistration of Signal change maps to anatomical and 
@@ -285,11 +279,9 @@ do
             return
         fi
     fi
-
     } | tee "$logfile"  # Save all output from this block and also show on screen
 
-    # Clear terminal after each dataset
-    clear
+
 
     if [ -d $All_Logs/$project_name ]; then
 
@@ -298,6 +290,7 @@ do
         mkdir All_Logs/$project_name.
         mv $logfile All_Logs/$project_name.
     fi
+
 done
 
 

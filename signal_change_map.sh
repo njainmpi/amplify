@@ -10,10 +10,10 @@ Signal_Change_Map (){
         # injection_duration=10
 
         input_4d_data=$1
-        file_for_parameter_calculation=$2
-        baseline_duration_in_min=$3
-        duration=$4
-        injection_duration=$5
+        local file_for_parameter_calculation=$2
+        local baseline_duration_in_min=$3
+        local duration=$4
+        local injection_duration=$5
 
 
         ##----------------------------------------------------------------------
@@ -27,21 +27,6 @@ Signal_Change_Map (){
         BOLD='\033[1m'
         NC='\033[0m'
         ##----------------------------------------------------------------------
-        # if [ $# -lt 5 ]; then
-              
-        #         echo -e "  bash $0 <input_4d_data> <file_for_parameter_calculation> <baseline_duration_in_min> <duration> <injection_duration>\n"
-               
-        #         echo -e "  input_4d_data                → Path to 4D fMRI NIfTI file"
-        #         echo -e "  file_for_parameter_calculation → Directory or file used to extract parameters"
-        #         echo -e "  baseline_duration_in_min    → Baseline duration in minutes"
-        #         echo -e "  duration                    → Total duration in minutes"
-        #         echo -e "  injection_duration          → Injection period duration in minutes"
-        #         echo ""
-                
-        # fi
-
-
-        source ./scm_visual.sh
 
         total_reps=$(awk -F'=' '/##\$PVM_NRepetitions=/{print $2}' $file_for_parameter_calculation/method)
         TotalScanTime=$(awk -F'=' '/##\$PVM_ScanTime=/{print $2}' $file_for_parameter_calculation/method)
@@ -155,12 +140,15 @@ Signal_Change_Map (){
         echo -e "${YELLOW}${bar_unit}${NC} = partial block duration"
 
         timestamp=$(date +"%Y-%m-%d_%H-%M")
+     
+
 
         #Step 3: Combine all the processed blocks into a single 4D image
         3dTcat -prefix Signal_Change_Map_premask_${duration}min_${timestamp}.nii.gz "${processed_images[@]}"
 
         fslmaths Signal_Change_Map_premask_${duration}min_${timestamp}.nii.gz -mas mask_mean_mc_func.nii.gz Signal_Change_Map_${duration}min_${timestamp}.nii.gz
 
+        cp Signal_Change_Map_${duration}min_${timestamp}.nii.gz Updated_Signal_Change_Map.nii.gz
         echo "All blocks processed and combined into final 4D image: Signal_Change_Map_${duration}min_${timestamp}.nii.gz"
 
 
