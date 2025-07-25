@@ -66,9 +66,11 @@ root_location="$matched_path"
 cd "$root_location/RawData"
 
 # Read the CSV file line by line, skipping the header
-awk -F ',' 'NR==7 {print $0}' "Animal_Experiments_Sequences_v1.csv" | while IFS=',' read -r col1 dataset_name project_name sub_project_name structural_name functional_name struc_coregistration roi_left roi_right histology physiology spio baseline_duration injection_duration _
+awk -F ',' 'NR>2 {print $0}' "Animal_Experiments_Sequences_v1.csv" | while IFS=',' read -r col1 dataset_name project_name sub_project_name structural_name functional_name struc_coregistration roi_left roi_right histology physiology spio baseline_duration injection_duration _
 do
-    
+
+# Clear terminal before each dataset
+clear
     # Prepare log file name per dataset
     logfile="log_${dataset_name}_FuncScan_${functional_name}_Dated_$(date +%Y%m%d_%H%M%S).txt"
 

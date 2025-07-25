@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 
 Signal_Change_Map (){
@@ -61,6 +61,7 @@ Signal_Change_Map (){
 
 
         draw_case "Sequence used $Sequence" $TotalScanTime_in_min_integer 1 $baseline_duration_in_min $injection_duration $VolTR $seq
+        rm -f baseline_image.nii.gz
 
         # Step 1: Compute the baseline image (mean of the first 600 repetitions)
         3dTstat -mean -prefix baseline_image.nii.gz ${input_4d_data}"[${base_start}..${base_end}]"
