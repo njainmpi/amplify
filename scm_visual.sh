@@ -19,8 +19,8 @@ draw_case () {
     local Sequence=$7
 
     local post_min=$((total_min - baseline_min - injection_min))
-    local total_vol=$(( (total_min * 60) / TR_sec ))
-    local baseline_vol=$(( (baseline_min * 60) / TR_sec ))
+    # local total_vol=$(( (total_min * 60) / TR_sec ))
+    baseline_vol=$(( (baseline_min * 60) / TR_sec ))
     local injection_vol=$(( (injection_min * 60) / TR_sec ))
     local post_vol=$(( (post_min * 60) / TR_sec ))
 

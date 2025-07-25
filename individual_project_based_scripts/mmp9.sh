@@ -23,6 +23,7 @@ source ../signal_change_map.sh
 source ../smoothing_using_fsl.sh
 source ../temporal_snr_using_afni.sh
 source ../temporal_snr_using_fsl.sh
+source ../scm_visual.sh
 
 currentpath="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -31,6 +32,10 @@ path_for_python_script_time_course="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd
 ts_roi_python_script=$path_for_python_script_time_course/time_course_single_subject.py
 
 echo $ts_roi_python_script
+
+# Clear terminal before each dataset
+clear
+
 
 ##In order to use awk, you need to convert xlsx file to csv file
 
@@ -61,7 +66,7 @@ root_location="$matched_path"
 cd "$root_location/RawData"
 
 # Read the CSV file line by line, skipping the header
-awk -F ',' 'NR==19 {print $0}' "Animal_Experiments_Sequences_v1.csv" | while IFS=',' read -r col1 dataset_name project_name sub_project_name structural_name functional_name struc_coregistration _
+awk -F ',' 'NR==7 {print $0}' "Animal_Experiments_Sequences_v1.csv" | while IFS=',' read -r col1 dataset_name project_name sub_project_name structural_name functional_name struc_coregistration roi_left roi_right histology physiology spio baseline_duration injection_duration _
 do
     
     # Prepare log file name per dataset
@@ -79,7 +84,9 @@ do
         export structural_run="$structural_name"
         export run_number="$functional_name"
         export str_for_coreg="$struc_coregistration"
-        
+        export baseline_duration_in_min="$baseline_duration"
+        export injection_duration_in_min="$injection_duration"
+
 
         # echo $Structural_Data
 
@@ -201,101 +208,89 @@ do
         run_if_missing  "sm_despike_cleaned_mc_func.nii.gz" -- SMOOTHING_using_FSL despike_cleaned_mc_func.nii.gz mask_mean_mc_func.nii.gz
 
 
+
         #Function for estimating Signal Change Maps
-        
+
         echo ""
         echo ""
         echo -e "\033[1;33mPerforming Step 7: Estimating Signal Change Maps\033[0m"
         echo ""
         echo ""
         log_function_execution "$LOG_DIR" "Signal Change Map created for Run Number $run_number acquired using $SequenceName" || exit 1
+        Signal_Change_Map sm_despike_cleaned_mc_func.nii.gz "$datapath/$run_number" $baseline_duration_in_min 2 $injection_duration_in_min
 
-        if [[ "$SequenceName" == *"functionalEPI"* ]]; then
-            run_if_missing "Signal_Change_Map.nii.gz" -- \
-            SIGNAL_CHANGE_MAPS cleaned_sm_despike_cleaned_mc_func.nii.gz "$datapath/$run_number" 10 10
-        elif [[ "$SequenceName" == *"FLASH"* ]]; then
-            run_if_missing "Signal_Change_Map.nii.gz" -- \
-            SIGNAL_CHANGE_MAPS mc_func.nii.gz 5 12 "$datapath/$run_number" 5 5 mean_mc_func.nii.gz
-        else
-            echo "Unknown sequence type: $SequenceName — skipping SIGNAL_CHANGE_MAPS."
-        fi
+        # #Function for coregistration of Signal change maps to anatomical and 
+        # #extraction of time courses
 
+        # echo ""
+        # echo ""
+        # echo -e "\033[1;33mPerforming Step 8: Coregistration of Signal Change Maps and Getting Time Courses.\033[0m"
+        # echo ""
+        # echo ""
+        # log_function_execution "$LOG_DIR" "Applying coregistration for Run Number $run_number acquired using $SequenceName" || exit 1
 
-        #Function for coregistration of Signal change maps to anatomical and 
-        #extraction of time courses
-
-        echo ""
-        echo ""
-        echo -e "\033[1;33mPerforming Step 8: Coregistration of Signal Change Maps and Getting Time Courses.\033[0m"
-        echo ""
-        echo ""
-        log_function_execution "$LOG_DIR" "Applying coregistration for Run Number $run_number acquired using $SequenceName" || exit 1
-
-        echo ""
-        echo "Description:"
-        echo "  This function performs manual alignment (coregistration) between a mean functional image"
-        echo "  and a high-resolution anatomical image using ITK-SNAP for visualization and ANTs for transformation."
-        echo ""
-        echo "Steps:"
-        echo "  1. Opens ITK-SNAP with 'mean_func' as the background and 'anatomy.nii.gz' as the overlay image."
-        echo "     You are expected to perform a manual rigid alignment and save the transformation matrix"
-        echo "     as 'anatomy_to_epi_mean.txt'."
-        echo ""
-        echo "  2. Applies the saved transformation using ANTs to bring 'mean_func' into anatomical space."
-        echo "     Output file is saved as 'epi_mean_to_anatomy.nii.gz'."
-        echo ""
-        echo "  3. Optionally visualizes the result in FSLeyes, overlaid with another image if provided"
-        echo "     as a positional argument to this function."
-        echo ""
-        echo "Notes:"
-        echo "  - Ensure 'mean_func' and 'anatomy.nii.gz' are in your working directory."
-        echo "  - The transformation matrix must be saved manually in ITK-SNAP as 'anatomy_to_epi_mean.txt'."
-        echo "  - This function uses ANTs (antsApplyTransforms) and FSLeyes. Ensure they are installed and available."
-        echo ""
+        # echo ""
+        # echo "Description:"
+        # echo "  This function performs manual alignment (coregistration) between a mean functional image"
+        # echo "  and a high-resolution anatomical image using ITK-SNAP for visualization and ANTs for transformation."
+        # echo ""
+        # echo "Steps:"
+        # echo "  1. Opens ITK-SNAP with 'mean_func' as the background and 'anatomy.nii.gz' as the overlay image."
+        # echo "     You are expected to perform a manual rigid alignment and save the transformation matrix"
+        # echo "     as 'anatomy_to_epi_mean.txt'."
+        # echo ""
+        # echo "  2. Applies the saved transformation using ANTs to bring 'mean_func' into anatomical space."
+        # echo "     Output file is saved as 'epi_mean_to_anatomy.nii.gz'."
+        # echo ""
+        # echo "  3. Optionally visualizes the result in FSLeyes, overlaid with another image if provided"
+        # echo "     as a positional argument to this function."
+        # echo ""
+        # echo "Notes:"
+        # echo "  - Ensure 'mean_func' and 'anatomy.nii.gz' are in your working directory."
+        # echo "  - The transformation matrix must be saved manually in ITK-SNAP as 'anatomy_to_epi_mean.txt'."
+        # echo "  - This function uses ANTs (antsApplyTransforms) and FSLeyes. Ensure they are installed and available."
+        # echo ""
 
 
         
-        if [ -f anatomy_to_func.txt ]; then
-            echo -e " \033[31mTransformation matrix\033[0m \033[32mexists.\033[0m"
+        # if [ -f anatomy_to_func.txt ]; then
+        #     echo -e " \033[31mTransformation matrix\033[0m \033[32mexists.\033[0m"
         
-            run_if_missing  "Coregistered_SCM.nii.gz" -- COREGISTRATION_UPSAMPLING Signal_Change_Map.nii.gz ../${str_for_coreg}*/anatomy.nii.gz anatomy_to_func.txt
+        #     run_if_missing  "Coregistered_SCM.nii.gz" -- COREGISTRATION_UPSAMPLING Signal_Change_Map.nii.gz ../${str_for_coreg}*/anatomy.nii.gz anatomy_to_func.txt
              
-            if ls ../${str_for_coreg}*/roi* 1> /dev/null 2>&1; then
-                echo -e "\033[32mROI exists. Proceeding for ROI analysis\033[0m"
-            else
-                echo -e "\033[31mROI does not exist.\033[0m"
-                echo -e "\033[31mCreate ROIs on Structural Image.\033[0m"
+        #     if ls ../${str_for_coreg}*/roi* 1> /dev/null 2>&1; then
+        #         echo -e "\033[32mROI exists. Proceeding for ROI analysis\033[0m"
+        #     else
+        #         echo -e "\033[31mROI does not exist.\033[0m"
+        #         echo -e "\033[31mCreate ROIs on Structural Image.\033[0m"
 
-                echo -e "\033[31mCreate Mask on Structural Image to filter Signal Change Maps.\033[0m"
-                fslmaths anatomy.nii.gz -thrp 30 -bin initial_anatomy
+        #         echo -e "\033[31mCreate Mask on Structural Image to filter Signal Change Maps.\033[0m"
+        #         fslmaths anatomy.nii.gz -thrp 30 -bin initial_anatomy
 
-                echo -e "\033[31mSave it by the name cleaned_anatomy_mask\033[0m"
+        #         echo -e "\033[31mSave it by the name cleaned_anatomy_mask\033[0m"
 
-                fsleyes ../${str_for_coreg}*/anatomy.nii.gz
-                fslmaths Coregistered_SCM.nii.gz -mas mask_${input_file} cleaned_Coregistered_SCM
-            fi
+        #         fsleyes ../${str_for_coreg}*/anatomy.nii.gz
+        #         fslmaths Coregistered_SCM.nii.gz -mas mask_${input_file} cleaned_Coregistered_SCM
+        #     fi
 
-            for roi_file in ../${str_for_coreg}*/roi*; do
+        #     for roi_file in ../${str_for_coreg}*/roi*; do
                 
-                # Skip if no files match (avoid literal 'roi*' when no match)
-                [ -e "$roi_file" ] || continue
+        #         # Skip if no files match (avoid literal 'roi*' when no match)
+        #         [ -e "$roi_file" ] || continue
 
-                echo -e "\033[31mRunning coregistration\033[0m on \033[32m$roi_file\033[0m"
-                COREGISTRATION_ROI "$roi_file" cleaned_N4_mean_mc_func.nii.gz anatomy_to_func.txt
-            done
+        #         echo -e "\033[31mRunning coregistration\033[0m on \033[32m$roi_file\033[0m"
+        #         COREGISTRATION_ROI "$roi_file" cleaned_N4_mean_mc_func.nii.gz anatomy_to_func.txt
+        #     done
 
-        else
-            echo -e " \033[31mYour transformation file does not exist. Create a new one using ITK-Snap.\033[0m"
-            echo -e " Please save your \033[31mtransformation matrix\033[0m as: \033[32manatomy_to_func.txt\033[0m"
+        # else
+        #     echo -e " \033[31mYour transformation file does not exist. Create a new one using ITK-Snap.\033[0m"
+        #     echo -e " Please save your \033[31mtransformation matrix\033[0m as: \033[32manatomy_to_func.txt\033[0m"
             
-            return
-        fi
+        #     return
+        # fi
     fi
-exit
     } | tee "$logfile"  # Save all output from this block and also show on screen
 
-    # Clear terminal after each dataset
-    # clear
 
 
     if [ -d $All_Logs/$project_name ]; then

@@ -23,6 +23,7 @@ source ../signal_change_map.sh
 source ../smoothing_using_fsl.sh
 source ../temporal_snr_using_afni.sh
 source ../temporal_snr_using_fsl.sh
+source ../scm_visual.sh
 
 currentpath="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -32,7 +33,10 @@ ts_roi_python_script=$path_for_python_script_time_course/time_course_single_subj
 
 echo $ts_roi_python_script
 
-##In order to use awk, you need to convert xlsx file to csv file
+# Clear terminal before each dataset
+clear
+
+
 
 
 identity="$(whoami)@$(hostname)"
@@ -61,7 +65,7 @@ root_location="$matched_path"
 cd "$root_location/RawData"
 
 # Read the CSV file line by line, skipping the header
-awk -F ',' 'NR==42 {print $0}' "Animal_Experiments_Sequences.csv" | while IFS=',' read -r col1 dataset_name project_name sub_project_name structural_name functional_name struc_coregistration _
+awk -F ',' 'NR==37 {print $0}' "Animal_Experiments_Sequences_v1.csv" | while IFS=',' read -r col1 dataset_name project_name sub_project_name structural_name functional_name struc_coregistration roi_left roi_right histology physiology spio baseline_duration injection_duration _
 do
     
     # Prepare log file name per dataset
@@ -79,7 +83,9 @@ do
         export structural_run="$structural_name"
         export run_number="$functional_name"
         export str_for_coreg="$struc_coregistration"
-        
+        export baseline_duration_in_min="$baseline_duration"
+        export injection_duration_in_min="$injection_duration"
+
 
         # echo $Structural_Data
 
@@ -201,24 +207,17 @@ do
         run_if_missing  "sm_despike_cleaned_mc_func.nii.gz" -- SMOOTHING_using_FSL despike_cleaned_mc_func.nii.gz mask_mean_mc_func.nii.gz
 
 
+
         #Function for estimating Signal Change Maps
         
+
         echo ""
         echo ""
         echo -e "\033[1;33mPerforming Step 7: Estimating Signal Change Maps\033[0m"
         echo ""
         echo ""
         log_function_execution "$LOG_DIR" "Signal Change Map created for Run Number $run_number acquired using $SequenceName" || exit 1
-
-        if [[ "$SequenceName" == *"functionalEPI"* ]]; then
-            run_if_missing "Signal_Change_Map.nii.gz" -- \
-            SIGNAL_CHANGE_MAPS cleaned_sm_despike_cleaned_mc_func.nii.gz "$datapath/$run_number" 10 10
-        elif [[ "$SequenceName" == *"FLASH"* ]]; then
-            run_if_missing "Signal_Change_Map.nii.gz" -- \
-            SIGNAL_CHANGE_MAPS mc_func.nii.gz 5 12 "$datapath/$run_number" 5 5 mean_mc_func.nii.gz
-        else
-            echo "Unknown sequence type: $SequenceName — skipping SIGNAL_CHANGE_MAPS."
-        fi
+        Signal_Change_Map sm_despike_cleaned_mc_func.nii.gz "$datapath/$run_number" $baseline_duration_in_min 2 $injection_duration_in_min
 
 
         #Function for coregistration of Signal change maps to anatomical and 
@@ -291,7 +290,7 @@ do
             return
         fi
     fi
-exit
+
     } | tee "$logfile"  # Save all output from this block and also show on screen
 
     # Clear terminal after each dataset
