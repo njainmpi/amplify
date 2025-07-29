@@ -55,6 +55,31 @@ COREGISTRATION_ROI () {
 
 
 COREGISTRATION_UPSAMPLING () {
+
+
+        echo ""
+        echo "Description:"
+        echo "  This function performs manual alignment (coregistration) between a mean functional image"
+        echo "  and a high-resolution anatomical image using ITK-SNAP for visualization and ANTs for transformation."
+        echo ""
+        echo "Steps:"
+        echo "  1. Opens ITK-SNAP with 'mean_func' as the background and 'anatomy.nii.gz' as the overlay image."
+        echo "     You are expected to perform a manual rigid alignment and save the transformation matrix"
+        echo "     as 'anatomy_to_epi_mean.txt'."
+        echo ""
+        echo "  2. Applies the saved transformation using ANTs to bring 'mean_func' into anatomical space."
+        echo "     Output file is saved as 'epi_mean_to_anatomy.nii.gz'."
+        echo ""
+        echo "  3. Optionally visualizes the result in FSLeyes, overlaid with another image if provided"
+        echo "     as a positional argument to this function."
+        echo ""
+        echo "Notes:"
+        echo "  - Ensure 'mean_func' and 'anatomy.nii.gz' are in your working directory."
+        echo "  - The transformation matrix must be saved manually in ITK-SNAP as 'anatomy_to_epi_mean.txt'."
+        echo "  - This function uses ANTs (antsApplyTransforms) and FSLeyes. Ensure they are installed and available."
+        echo ""
+
+
     # Help Message
     if [[ "$1" == "--help" || "$1" == "-h" ]]; then
         echo "Usage: COREGISTRATION_UPSAMPLING"
