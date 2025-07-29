@@ -219,7 +219,7 @@ clear
         echo ""
         echo ""
         log_function_execution "$LOG_DIR" "Signal Change Map created for Run Number $run_number acquired using $SequenceName" || exit 1
-        Signal_Change_Map sm_despike_cleaned_mc_func.nii.gz "$datapath/$run_number" $baseline_duration_in_min 2 $injection_duration_in_min
+        Signal_Change_Map sm_despike_cleaned_mc_func.nii.gz "$datapath/$run_number" $baseline_duration_in_min 1 $injection_duration_in_min
 
         # #Function for coregistration of Signal change maps to anatomical and 
         # #extraction of time courses
