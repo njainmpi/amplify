@@ -19,7 +19,7 @@ source ../coregistration.sh
 source ../data_conversion.sh
 source ../motion_correction.sh
 source ../quality_check.sh
-source ../signal_change_map.sh
+source ../signal_change_map_blush.sh
 source ../smoothing_using_fsl.sh
 source ../temporal_snr_using_afni.sh
 source ../temporal_snr_using_fsl.sh
@@ -183,7 +183,7 @@ clear
         #Function for estimating Signal Change Maps
         PRINT_YELLOW "Performing Step 7: Estimating Signal Change Maps"
         log_function_execution "$LOG_DIR" "Signal Change Map created for Run Number $run_number acquired using $SequenceName" || exit 1
-        Signal_Change_Map sm_despike_cleaned_mc_func.nii.gz "$datapath/$run_number" $baseline_duration_in_min 1 $injection_duration_in_min
+        Signal_Change_Map sm_despike_cleaned_mc_func.nii.gz "$datapath/$run_number" 20 1 $injection_duration_in_min
 
         #Function for coregistration of Signal change maps to anatomical and   extraction of time courses
 
