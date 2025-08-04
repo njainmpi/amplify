@@ -18,6 +18,7 @@ draw_case () {
     local TR_sec=$6
     local Sequence=$7
 
+
     local post_min=$((total_min - baseline_min - injection_min))
     # local total_vol=$(( (total_min * 60) / TR_sec ))
     baseline_vol=$(( (baseline_min * 60) / TR_sec ))
@@ -81,4 +82,4 @@ draw_case () {
 }
 
 # CASE 1: TR = 17s, 180 volumes → 51 minutes
-# draw_case "CASE 1 (TR = 17s)" 51 1 10 10 17
+draw_case "CASE 1 (TR = 17s)" 51 1 20 10 1
