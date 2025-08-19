@@ -48,7 +48,7 @@ Signal_Change_Map (){
         echo ""
         No_of_Vols_in_pre_PACAP_injection=$((baseline_duration_in_min * 60 / VolTR))
         echo -e "${RED}No of Volumes${NC} in data are ${GREEN}$total_reps${NC} with ${RED}Volume TR${NC} of ${GREEN}$VolTR sec${NC} with ${RED}No of Volumes in Pre_injection${NC} to be ${GREEN}$No_of_Vols_in_pre_PACAP_injection${NC}."
-        Seconds_to_be_discarded=900
+        Seconds_to_be_discarded=600
         No_of_Vols_in_pre_PACAP_injection_to_be_discarded=$((Seconds_to_be_discarded / VolTR))
         echo -e "${RED}No of Volumes to be discard is $No_of_Vols_in_pre_PACAP_injection_to_be_discarded for $Seconds_to_be_discarded Seconds.${NC}"
 
@@ -155,6 +155,12 @@ Signal_Change_Map (){
         echo "All blocks processed and combined into final 4D image: Signal_Change_Map_${duration}min_${timestamp}.nii.gz"
 
 
-        rm -f *block* processed* ratio_processed*
+        mkdir img_blocks img_pr img_rat_pr
+
+        mv *block* img_blocks/.
+        mv processed* img_pr/.
+        mv ratio_processed* img_rat_pr/.
+        # rm -f *block* processed* ratio_processed*
+
 
 }

@@ -67,7 +67,7 @@ root_location="$matched_path"
 cd "$root_location/RawData"
 
 # Read the CSV file line by line, skipping the header
-awk -F ',' 'NR==3 {print $0}' "Animal_Experiments_Sequences_v1.csv" | while IFS=',' read -r col1 dataset_name project_name sub_project_name structural_name functional_name struc_coregistration roi_left roi_right histology physiology spio baseline_duration injection_duration _
+awk -F ',' 'NR>3 {print $0}' "Animal_Experiments_Sequences_v1.csv" | while IFS=',' read -r col1 dataset_name project_name sub_project_name structural_name functional_name struc_coregistration roi_left roi_right histology physiology spio baseline_duration injection_duration _
 do
 
 # Clear terminal before each dataset
@@ -183,18 +183,12 @@ clear
         #Function for estimating Signal Change Maps
         PRINT_YELLOW "Performing Step 7: Estimating Signal Change Maps"
         log_function_execution "$LOG_DIR" "Signal Change Map created for Run Number $run_number acquired using $SequenceName" || exit 1
-        Signal_Change_Map sm_despike_cleaned_mc_func.nii.gz "$datapath/$run_number" $baseline_duration_in_min 1 $injection_duration_in_min
+        Signal_Change_Map sm_despike_cleaned_mc_func.nii.gz "$datapath/$run_number" $baseline_duration_in_min 20 $injection_duration_in_min
 
-        #Function for coregistration of Signal change maps to anatomical and   extraction of time courses
-
-        # PRINT_YELLOW "Performing Step 8: Coregistration of Signal Change Maps and Getting Time Courses."
-        # log_function_execution "$LOG_DIR" "Applying coregistration for Run Number $run_number acquired using $SequenceName" || exit 1
-
-
-        # if [ -f anatomy_to_func.txt ]; then
-        #     echo -e " \033[31mTransformation matrix\033[0m \033[32mexists.\033[0m"
+        if [ -f anatomy_to_func.txt ]; then
+            echo -e " \033[31mTransformation matrix\033[0m \033[32mexists.\033[0m"
         
-        #     run_if_missing  "Coregistered_SCM.nii.gz" -- COREGISTRATION_UPSAMPLING Signal_Change_Map.nii.gz ../${str_for_coreg}*/anatomy.nii.gz anatomy_to_func.txt
+            COREGISTRATION_UPSAMPLING Signal_Change_Map.nii.gz ../${str_for_coreg}* anatomy_to_func.txt
              
         #     if ls ../${str_for_coreg}*/roi* 1> /dev/null 2>&1; then
         #         echo -e "\033[32mROI exists. Proceeding for ROI analysis\033[0m"
@@ -220,12 +214,12 @@ clear
         #         COREGISTRATION_ROI "$roi_file" cleaned_N4_mean_mc_func.nii.gz anatomy_to_func.txt
         #     done
 
-        # else
-        #     echo -e " \033[31mYour transformation file does not exist. Create a new one using ITK-Snap.\033[0m"
-        #     echo -e " Please save your \033[31mtransformation matrix\033[0m as: \033[32manatomy_to_func.txt\033[0m"
+        else
+            echo -e " \033[31mYour transformation file does not exist. Create a new one using ITK-Snap.\033[0m"
+            echo -e " Please save your \033[31mtransformation matrix\033[0m as: \033[32manatomy_to_func.txt\033[0m"
             
-        #     return
-        # fi
+            return
+        fi
     fi
     } | tee "$logfile"  # Save all output from this block and also show on screen
 
