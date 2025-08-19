@@ -48,13 +48,13 @@ Signal_Change_Map (){
         echo ""
         No_of_Vols_in_pre_PACAP_injection=$((baseline_duration_in_min * 60 / VolTR))
         echo -e "${RED}No of Volumes${NC} in data are ${GREEN}$total_reps${NC} with ${RED}Volume TR${NC} of ${GREEN}$VolTR sec${NC} with ${RED}No of Volumes in Pre_injection${NC} to be ${GREEN}$No_of_Vols_in_pre_PACAP_injection${NC}."
-        Seconds_to_be_discarded=80
+        Seconds_to_be_discarded=300
         No_of_Vols_in_pre_PACAP_injection_to_be_discarded=$((Seconds_to_be_discarded / VolTR))
         echo -e "${RED}No of Volumes to be discard is $No_of_Vols_in_pre_PACAP_injection_to_be_discarded for $Seconds_to_be_discarded Seconds.${NC}"
 
 
         base_start=$(( 0 + No_of_Vols_in_pre_PACAP_injection_to_be_discarded ))
-        base_end=$(( No_of_Vols_in_pre_PACAP_injection - No_of_Vols_in_pre_PACAP_injection_to_be_discarded ))
+        base_end=$(( No_of_Vols_in_pre_PACAP_injection ))
 
         echo ""
         echo -e "${BLUE}For current data, baseline calculation starts at Volume No${NC} ${GREEN}$base_start${NC} ${BLUE}and finishes at${NC} ${GREEN}$base_end${NC}."
@@ -64,13 +64,16 @@ Signal_Change_Map (){
         rm -f baseline_image.nii.gz
 
         # Step 1: Compute the baseline image (mean of the first 600 repetitions)
+        rm -f baseline_image.nii.gz
         3dTstat -mean -prefix baseline_image.nii.gz ${input_4d_data}"[${base_start}..${base_end}]"
 
         # Initialize an empty list to store the intermediate processed images
         processed_images=()
-        duration_seconds=$((duration * 60))
+        # duration_seconds=$((duration * 60))
+        duration_seconds=${duration}
         volumes_per_block=$(echo "$duration_seconds / $VolTR" | bc)
         total_reps_idx=$((total_reps))
+
 
         # === VALIDATE ===
         if [[ -z "$VolTR" || -z "$total_reps_idx" || -z "$duration" ]]; then
@@ -149,10 +152,15 @@ Signal_Change_Map (){
 
         fslmaths Signal_Change_Map_premask_${duration}min_${timestamp}.nii.gz -mas mask_mean_mc_func.nii.gz Signal_Change_Map_${duration}min_${timestamp}.nii.gz
 
+        rm -f Updated_Signal_Change_Map.nii.gz
         cp Signal_Change_Map_${duration}min_${timestamp}.nii.gz Updated_Signal_Change_Map.nii.gz
         echo "All blocks processed and combined into final 4D image: Signal_Change_Map_${duration}min_${timestamp}.nii.gz"
 
+        mkdir img_blocks img_pr img_rat_pr
 
-        rm -f *block* processed* ratio_processed*
+        mv *block* img_blocks/
+        mv processed* img_pr/
+        mv ratio_processed* img_rat_pr/
+        # rm -f *block* processed* ratio_processed*
 
 }

@@ -27,6 +27,7 @@ COREGISTRATION_ROI () {
     input_roi="$1"
     ref_image="$2"
     transform="$3"
+    
 
     input_name=$(basename "${input_roi%.nii.gz}")
     ref_name="${ref_image%.nii.gz}"
@@ -103,8 +104,11 @@ COREGISTRATION_UPSAMPLING () {
 
     # Function body
     input_4D="$1"
-    ref_image="$2"
+    path_strutural="$2"
     transform="$3"
+    output_name="$4"
+    
+    ref_image="$path_strutural/anatomy.nii.gz"
 
     n_vols=$(fslval "$input_4D" dim4)
 
@@ -121,9 +125,54 @@ COREGISTRATION_UPSAMPLING () {
             -n BSpline
     done
 
-    fslmerge -t Coregistered_SCM.nii.gz coreg_vol*
+    fslmerge -t ${output_name}.nii.gz coreg_vol*
 
-    echo -e "Your \033[31mCoregistered Signal Change Map\033[0m is saved by the name \033[32mCoregistered_SCM.nii.gz. \033[0m"
+    
+
+    echo "Please draw a mask on the anatomy using FSLeyes and save it as 'mask_for_SCM.nii.gz' and save in Anatomical Image folder."
+    echo "Please draw a mask on the anatomy using FSLeyes and save it as 'mask_for_cleaned_anatomy.nii.gz' and save in Anatomical Image folder."
+    
+    mask_image_SCM="${path_strutural}/mask_for_SCM.nii.gz"
+    mask_for_cleaned_anatomy="${path_strutural}/mask_for_cleaned_anatomy.nii.gz"
+
+
+    if [[ -f ${mask_image_SCM} ]]; then
+        echo "Mask Image for cleaning SCM Exists"
+    else
+        fsleyes "$ref_image" ${output_name}.nii.gz
+    fi
+    
+    if [[ -f ${mask_for_cleaned_anatomy} ]]; then
+        echo "Mask Image for cleaning anatomy exists"
+    else
+        fsleyes "$ref_image" ${output_name}.nii.gz
+    fi
+
+
+    fslmaths ${output_name}.nii.gz -mas $mask_image_SCM cleaned_${output_name}.nii.gz
+    fslmaths ${ref_image} -mas $mask_for_cleaned_anatomy cleaned_anatomy.nii.gz
+
+
+    fslreorient2std cleaned_anatomy.nii.gz cleaned_anatomy_reoriented.nii.gz
+    fslreorient2std ${output_name}.nii.gz ${output_name}_reoriented.nii.gz
+    fslreorient2std cleaned_${output_name}.nii.gz cleaned_${output_name}_reoriented.nii.gz
+
+    # mkdir static_maps_registered static_maps_registered_cleaned
+
+    # cp Coregistered_SCM.nii.gz static_maps_registered/Coregistered_SCM.nii.gz
+    # cp cleaned_Coregistered_SCM.nii.gz static_maps_registered_cleaned/cleaned_Coregistered_SCM.nii.gz
+
+
+    # cd static_maps_registered
+    # fslsplit Coregistered_SCM.nii.gz Coregistered_SCM_block -t
+
+    # cd ../static_maps_registered_cleaned
+    # fslsplit cleaned_Coregistered_SCM.nii.gz cleaned_Coregistered_SCM_block -t
+    # cd ..
+
+    echo -e "Your \033[31mCoregistered Signal Change Map\033[0m is saved by the name \033[32m${output_name}.nii.gz. \033[0m"
+   
+    
     rm -rf coreg_vol0*
     rm -rf vol0*
 }
