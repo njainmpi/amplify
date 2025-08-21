@@ -1,4 +1,3 @@
-%%Section 1 — Header, Settings, Load NIfTI, Precompute Maps
 %% SCM_MATLAB_ROI_Interactive.m — Axial %Change Viewer (3D ROI + interactive UI)
 % New interactivity:
 % - Top-left: Dark/Light theme toggle
@@ -20,24 +19,22 @@
 clear; clc;
 
 %% ---- SETTINGS ----
-in_nii        = 'cleaned_mc_func.nii.gz';  % path or will prompt
-baseline_idx  = 350:550;
-signal_idx    = 1300:1500;
-eps_baseline  = 1e-6;
-alpha_base    = 0.6;
-default_tiles = 8;                         % 4 or 8
+in_nii          = 'cleaned_mc_func.nii.gz';   % path or will prompt
+baseline_idx    = 350:550;
+signal_idx      = 1300:1500;
+eps_baseline    = 1e-6;
+alpha_base      = 0.6;
+default_tiles   = 8;                          % 4 or 8
 
 %% ---- LOAD 4D NIFTI (.nii/.nii.gz) ----
 if isstring(in_nii), in_nii = char(in_nii); end
 in_nii = strtrim(in_nii);
-
 if ~isempty(in_nii)
     if startsWith(in_nii, ''''), in_nii = in_nii(2:end); end
     if ~isempty(in_nii) && endsWith(in_nii, ''''), in_nii = in_nii(1:end-1); end
-    if startsWith(in_nii, '"'), in_nii = in_nii(2:end); end
-    if ~isempty(in_nii) && endsWith(in_nii, '"'), in_nii = in_nii(1:end-1); end
+    if startsWith(in_nii, '"'),  in_nii = in_nii(2:end); end
+    if ~isempty(in_nii) && endsWith(in_nii, '"'),  in_nii = in_nii(1:end-1); end
 end
-
 if ~exist(in_nii,'file')
     warning('Input NIfTI not found: %s', in_nii);
     [f,p] = uigetfile({'*.nii;*.nii.gz','NIfTI files (*.nii, *.nii.gz)'}, ...
@@ -46,309 +43,212 @@ if ~exist(in_nii,'file')
     in_nii = fullfile(p,f);
 end
 
-is_gz   = endsWith(in_nii,'.gz','IgnoreCase',true);
+is_gz = endsWith(in_nii,'.gz','IgnoreCase',true);
 tmp_nii = '';
-
 if is_gz
     [tmpdir,~,~] = fileparts(tempname);
     if ~exist(tmpdir,'dir'), mkdir(tmpdir); end
     gunzip(in_nii,tmpdir);
-    [~,b,~] = fileparts(in_nii);
+    [~,b,~]   = fileparts(in_nii);
     [~,b2,e2] = fileparts(b);
-    tmp_nii = fullfile(tmpdir,[b2, e2]);
+    tmp_nii   = fullfile(tmpdir,[b2, e2]);
     niiPathToRead = tmp_nii;
 else
     niiPathToRead = in_nii;
 end
 
 info = niftiinfo(niiPathToRead);
-Y    = double(niftiread(info));  % X x Y x Z x T
+Y = double(niftiread(info));                 % X x Y x Z x T
 [X,Ydim,Z,T] = size(Y);
 fprintf('Loaded: %d x %d x %d x %d\n', X, Ydim, Z, T);
 
 %% ---- MAPS ----
 baseline_mean = mean(Y(:,:,:,baseline_idx),4);
 signal_mean   = mean(Y(:,:,:,signal_idx),4);
-den           = baseline_mean;
-den(abs(den)<eps_baseline) = eps_baseline;
-pc            = ((signal_mean - baseline_mean) ./ den) * 100;
-U_mean4D      = mean(Y,4);
 
-pc_flat = pc(isfinite(pc));
-if isempty(pc_flat), pc_flat = 0; end
-pc_lo   = prctile(pc_flat,2);
-pc_hi   = prctile(pc_flat,98);
+den = baseline_mean; den(abs(den)<eps_baseline) = eps_baseline;
+pc = ((signal_mean - baseline_mean) ./ den) * 100;
+U_mean4D = mean(Y,4);
+
+pc_flat = pc(isfinite(pc)); if isempty(pc_flat), pc_flat = 0; end
+pc_lo = prctile(pc_flat,2); pc_hi = prctile(pc_flat,98);
 pc_mag_default = max(5, max(abs([pc_lo pc_hi])));
 
-pc_abs      = abs(pc);
-pc_abs_flat = pc_abs(isfinite(pc_abs));
-if isempty(pc_abs_flat), pc_abs_flat = 0; end
-pc_abs_lo   = prctile(pc_abs_flat,2);
-pc_abs_hi   = prctile(pc_abs_flat,98);
-if pc_abs_hi <= pc_abs_lo, pc_abs_hi = pc_abs_lo + eps; end
+pc_abs = abs(pc); pc_abs_flat = pc_abs(isfinite(pc_abs)); if isempty(pc_abs_flat), pc_abs_flat = 0; end
+pc_abs_lo = prctile(pc_abs_flat,2); pc_abs_hi = prctile(pc_abs_flat,98);
+if pc_abs_hi<=pc_abs_lo, pc_abs_hi = pc_abs_lo + eps; end
 
 [und_lo_mean, und_hi_mean] = robust_window(U_mean4D);
 [und_lo_base, und_hi_base] = robust_window(baseline_mean);
 
 try
     uflat = U_mean4D(isfinite(U_mean4D));
-    u_lo  = prctile(uflat,2);
-    u_hi  = prctile(uflat,98);
-    thr   = graythresh(mat2gray(U_mean4D));
+    u_lo = prctile(uflat,2); u_hi = prctile(uflat,98);
+    thr = graythresh(mat2gray(U_mean4D));
     brainMask = U_mean4D > (u_lo + thr*(u_hi - u_lo));
 catch
     brainMask = U_mean4D > 0;
 end
 
-%%Section 2 — Figure Layout, UI (Left/Right/Bottom Panels), Top Row Controls
 %% ---- FIGURE LAYOUT ----
-fig = figure( ...
-    'Color','w', ...
-    'Name','Axial %Change Viewer (Interactive)', ...
-    'Units','normalized','Position',[0.04 0.04 0.92 0.90]);
+fig = figure('Color','w','Name','Axial %Change Viewer (Interactive)', ...
+             'Units','normalized','Position',[0.04 0.04 0.92 0.90]);
 
-panelLeft = uipanel('Parent',fig,'Units','normalized', ...
-    'Position',[0.03 0.18 0.64 0.79], 'BorderType','none');
+panelLeft   = uipanel('Parent',fig,'Units','normalized','Position',[0.03 0.18 0.64 0.79], 'BorderType','none');
+panelRight  = uipanel('Parent',fig,'Units','normalized','Position',[0.69 0.18 0.28 0.79], 'BorderType','none','BackgroundColor','w');
+panelCtrl   = uipanel('Parent',fig,'Units','normalized','Position',[0.03 0.03 0.94 0.12], 'BorderType','none','BackgroundColor','w');
 
-panelRight = uipanel('Parent',fig,'Units','normalized', ...
-    'Position',[0.69 0.18 0.28 0.79], 'BorderType','none','BackgroundColor','w');
-
-panelCtrl = uipanel('Parent',fig,'Units','normalized', ...
-    'Position',[0.03 0.03 0.94 0.12], 'BorderType','none','BackgroundColor','w');
-
-% --- Right-side axes ---
+% Right-side axes
 axTS = axes('Parent',panelRight,'Position',[0.12 0.28 0.83 0.67]);
-box(axTS,'on');
-grid(axTS,'on');
-xlabel(axTS,'Time (in sec)');
-ylabel(axTS,'Raw MRI Signal');
+box(axTS,'on'); grid(axTS,'on'); xlabel(axTS,'Time (in sec)'); ylabel(axTS,'Raw MRI Signal');
 title(axTS,'Time series / PSC (click a slice)');
 
-% --- 3D ROI controls (right panel) ---
+% 3D ROI controls (right panel)
 chk_roi = uicontrol('Parent',panelRight,'Style','checkbox','Units','normalized', ...
-    'Position',[0.12 0.20 0.18 0.06], ...
-    'String','Use ROI (3D)', 'Value',1, ...
-    'BackgroundColor','w', 'Callback',@roiChanged, ...
-    'TooltipString','Toggle averaging over a 3D neighborhood');
+    'Position',[0.12 0.20 0.18 0.06], 'String','Use ROI (3D)', 'Value',1, ...
+    'BackgroundColor','w', 'Callback',@roiChanged, 'TooltipString','Toggle averaging over a 3D neighborhood');
 
 uicontrol('Parent',panelRight,'Style','text','Units','normalized', ...
-    'Position',[0.32 0.20 0.10 0.05], 'String','XY Radius:', ...
-    'BackgroundColor','w','HorizontalAlignment','right');
-
+    'Position',[0.32 0.20 0.10 0.05], 'String','XY Radius:', 'BackgroundColor','w','HorizontalAlignment','right');
 sld_roirXY = uicontrol('Parent',panelRight,'Style','slider','Units','normalized', ...
-    'Position',[0.43 0.21 0.20 0.05], ...
-    'Min',1, 'Max',15, 'Value',3, ...
-    'SliderStep',[1/14 3/14], 'Callback',@roiChanged, ...
-    'TooltipString','ROI radius in voxels (XY)');
-
+    'Position',[0.43 0.21 0.20 0.05], 'Min',1, 'Max',15, 'Value',3, ...
+    'SliderStep',[1/14 3/14], 'Callback',@roiChanged, 'TooltipString','ROI radius in voxels (XY)');
 lbl_roirXY = uicontrol('Parent',panelRight,'Style','text','Units','normalized', ...
-    'Position',[0.64 0.20 0.07 0.05], 'String','3', ...
-    'BackgroundColor','w','HorizontalAlignment','left');
+    'Position',[0.64 0.20 0.07 0.05], 'String','3', 'BackgroundColor','w','HorizontalAlignment','left');
 
 pop_roishape = uicontrol('Parent',panelRight,'Style','popupmenu','Units','normalized', ...
-    'Position',[0.72 0.205 0.24 0.06], ...
-    'String',{'3D Sphere','3D Cylinder'}, ...
-    'Callback',@roiChanged, ...
+    'Position',[0.72 0.205 0.24 0.06], 'String',{'3D Sphere','3D Cylinder'}, 'Callback',@roiChanged, ...
     'TooltipString','ROI shape in 3D');
 
 uicontrol('Parent',panelRight,'Style','text','Units','normalized', ...
-    'Position',[0.12 0.14 0.18 0.05], 'String','±Z half-depth:', ...
-    'BackgroundColor','w','HorizontalAlignment','right');
-
+    'Position',[0.12 0.14 0.18 0.05], 'String','±Z half-depth:', 'BackgroundColor','w','HorizontalAlignment','right');
 sld_roirZ = uicontrol('Parent',panelRight,'Style','slider','Units','normalized', ...
-    'Position',[0.31 0.15 0.32 0.05], ...
-    'Min',0, 'Max',8, 'Value',2, ...
-    'SliderStep',[1/8 2/8], 'Callback',@roiChanged, ...
-    'TooltipString','Half-depth in slices (cylinder only)');
-
+    'Position',[0.31 0.15 0.32 0.05], 'Min',0, 'Max',8, 'Value',2, ...
+    'SliderStep',[1/8 2/8], 'Callback',@roiChanged, 'TooltipString','Half-depth in slices (cylinder only)');
 lbl_roirZ = uicontrol('Parent',panelRight,'Style','text','Units','normalized', ...
-    'Position',[0.64 0.14 0.07 0.05], 'String','2', ...
-    'BackgroundColor','w','HorizontalAlignment','left');
-
+    'Position',[0.64 0.14 0.07 0.05], 'String','2', 'BackgroundColor','w','HorizontalAlignment','left');
 uicontrol('Parent',panelRight,'Style','text','Units','normalized', ...
     'Position',[0.72 0.14 0.24 0.05], 'String','(slices; cylinder only)', ...
-    'BackgroundColor','w','HorizontalAlignment','left', ...
-    'ForegroundColor',[0.3 0.3 0.3]);
+    'BackgroundColor','w','HorizontalAlignment','left','ForegroundColor',[0.3 0.3 0.3]);
 
-% --- PSC controls (right panel) ---
+% PSC controls (right panel)
 chk_psc = uicontrol('Parent',panelRight,'Style','checkbox','Units','normalized', ...
     'Position',[0.12 0.07 0.25 0.06], 'String','Plot PSC', 'Value',0, ...
-    'BackgroundColor','w', 'Callback',@(~,~)refreshTSLabel(axTS), ...
-    'TooltipString','Toggle PSC (%) vs raw signal');
-
+    'BackgroundColor','w', 'Callback',@(~,~)refreshTSLabel(axTS), 'TooltipString','Toggle PSC (%) vs raw signal');
 uicontrol('Parent',panelRight,'Style','text','Units','normalized', ...
     'Position',[0.39 0.07 0.20 0.06], 'String','Baseline mode:', ...
     'BackgroundColor','w','HorizontalAlignment','right','FontWeight','bold');
-
 pop_bmode = uicontrol('Parent',panelRight,'Style','popupmenu','Units','normalized', ...
     'Position',[0.60 0.075 0.26 0.06], ...
-    'String',{'Global baseline_idx','Manual [b1 b2]'}, ...
-    'Callback',@(~,~)refreshTSLabel(axTS));
-
+    'String',{'Global baseline_idx','Manual [b1 b2]'}, 'Callback',@(~,~)refreshTSLabel(axTS));
 uicontrol('Parent',panelRight,'Style','text','Units','normalized', ...
     'Position',[0.12 0.01 0.10 0.05], 'String','b1:', ...
     'BackgroundColor','w','HorizontalAlignment','right');
-
 edt_b1 = uicontrol('Parent',panelRight,'Style','edit','Units','normalized', ...
     'Position',[0.23 0.01 0.12 0.06], 'String',num2str(min(baseline_idx)), ...
-    'Callback',@(~,~)refreshTSLabel(axTS), ...
-    'TooltipString','Baseline start (frame)');
-
+    'Callback',@(~,~)refreshTSLabel(axTS), 'TooltipString','Baseline start (frame)');
 uicontrol('Parent',panelRight,'Style','text','Units','normalized', ...
     'Position',[0.38 0.01 0.10 0.05], 'String','b2:', ...
     'BackgroundColor','w','HorizontalAlignment','right');
-
 edt_b2 = uicontrol('Parent',panelRight,'Style','edit','Units','normalized', ...
     'Position',[0.49 0.01 0.12 0.06], 'String',num2str(max(baseline_idx)), ...
-    'Callback',@(~,~)refreshTSLabel(axTS), ...
-    'TooltipString','Baseline end (frame)');
-
+    'Callback',@(~,~)refreshTSLabel(axTS), 'TooltipString','Baseline end (frame)');
 uicontrol('Parent',panelRight,'Style','text','Units','normalized', ...
     'Position',[0.64 0.01 0.22 0.05], 'String','(Used if Manual)', ...
     'BackgroundColor','w','HorizontalAlignment','left','ForegroundColor',[0.3 0.3 0.3]);
 
-% --- Tiles (slice grid) ---
+% Tiles (slice grid)
 [slices_per_page, tl, ax, imU, imP] = createTiles(panelLeft, default_tiles);
 
-% Colormap + colorbar
-cmap = gbhot_diverging(256);
+% Colormap (colorbar will be created later via placeColorbarRight after S is saved)
+cmap = gbhot_diverging(256); 
 colormap(fig, cmap);
-
-try
-    cb = colorbar(tl,'Location','southoutside');
-catch
-    cb = colorbar('southoutside');
-end
-cb.Label.String = '% change';
 
 %% ---- Top row controls in panelLeft (overlaying above tiles) ----
 % Theme toggle (top-left)
 btn_theme = uicontrol('Parent',panelLeft, ...
     'Style','togglebutton','Units','normalized', ...
     'Position',[0.01 0.955 0.14 0.04], ...
-    'String','Dark theme', 'fontSize', 14, 'fontname', 'Calibri', ...
-    'Callback',@toggleTheme, 'TooltipString','Toggle light/dark theme');
+    'String','Dark theme', 'fontSize', 14, 'fontname', 'Calibri', 'Callback',@toggleTheme, ...
+    'TooltipString','Toggle light/dark theme');
 uistack(btn_theme,'top');
 
 % Sign label + dropdown (top-right, same line)
 lbl_sign = uicontrol('Parent',panelLeft,'Style','text','Units','normalized', ...
-    'Position',[0.74 0.955 0.07 0.04], 'String','Nature of Maps:', ...
-    'HorizontalAlignment','right', 'fontSize', 14, 'fontname', 'Calibri');
-
+    'Position',[0.74 0.955 0.07 0.04], ...
+    'String','Nature of Maps:','HorizontalAlignment','right', 'fontSize', 14, 'fontname', 'Calibri');
 pop_sign = uicontrol('Parent',panelLeft,'Style','popupmenu','Units','normalized', ...
     'Position',[0.82 0.955 0.17 0.04], 'fontSize', 14, 'fontname', 'Calibri', ...
-    'String',{'All Changes','Positive Changes only','Negative Changes only'}, ...
-    'Callback',@changeOverlay);
+    'String',{'All Changes','Positive Changes only','Negative Changes only'}, 'Callback',@changeOverlay);
+uistack(lbl_sign,'top'); uistack(pop_sign,'top');
 
-uistack(lbl_sign,'top');
-uistack(pop_sign,'top');
+%% ---- Controls (bottom panel) ----
+uicontrol('Parent',panelCtrl,'Style','pushbutton','Units','normalized','Position',[0.01 0.40 0.07 0.50], ...
+    'String','◀ Prev','FontWeight','bold','Callback',@prevPage, 'TooltipString','Previous page (←)');
+uicontrol('Parent',panelCtrl,'Style','pushbutton','Units','normalized','Position',[0.09 0.42 0.07 0.50], ...
+    'String','Next ▶','FontWeight','bold','Callback',@nextPage, 'TooltipString','Next page (→)');
 
-%%Section 3 — Bottom Controls, Status Bar, Pack State & Initialize
-%% ---- Bottom controls (panelCtrl) ----
-uicontrol('Parent',panelCtrl,'Style','pushbutton','Units','normalized', ...
-    'Position',[0.01 0.42 0.07 0.50], 'String','◀ Prev','FontWeight','bold', ...
-    'Callback',@prevPage, 'TooltipString','Previous page (←)');
+lbl_page = uicontrol('Parent',panelCtrl,'Style','text','Units','normalized','Position',[0.17 0.42 0.14 0.50], ...
+    'String','','BackgroundColor','w','FontWeight','bold','HorizontalAlignment','center','Tag','lbl_page');
 
-uicontrol('Parent',panelCtrl,'Style','pushbutton','Units','normalized', ...
-    'Position',[0.09 0.42 0.07 0.50], 'String','Next ▶','FontWeight','bold', ...
-    'Callback',@nextPage, 'TooltipString','Next page (→)');
-
-lbl_page = uicontrol('Parent',panelCtrl,'Style','text','Units','normalized', ...
-    'Position',[0.17 0.42 0.14 0.50], 'String','', ...
-    'BackgroundColor','w','FontWeight','bold','HorizontalAlignment','center', ...
-    'Tag','lbl_page');
-
+% Tiles controls — just above Prev/Next (Prev/Next top = 0.92)
 uicontrol('Parent',panelCtrl,'Style','text','Units','normalized', ...
-    'Position',[0.32 0.62 0.05 0.28], 'String','Tiles:', ...
-    'BackgroundColor','w','HorizontalAlignment','right','FontWeight','bold');
+    'Position',[0.01 0.94 0.07 0.05], ...
+    'String','Tiles:','BackgroundColor','w','HorizontalAlignment','left','FontWeight','bold');
 
 valTiles = 1 + (default_tiles==8);
 pop_tiles = uicontrol('Parent',panelCtrl,'Style','popupmenu','Units','normalized', ...
-    'Position',[0.38 0.62 0.07 0.28], ...
+    'Position',[0.09 0.94 0.10 0.05], ...
     'String',{'4 (2×2)','8 (2×4)'}, 'Value', valTiles, 'Callback',@changeTiles);
 
-uicontrol('Parent',panelCtrl,'Style','text','Units','normalized', ...
-    'Position',[0.46 0.62 0.09 0.28], 'String','Underlay:', ...
-    'BackgroundColor','w','HorizontalAlignment','right','FontWeight','bold');
-
-pop_under = uicontrol('Parent',panelCtrl,'Style','popupmenu','Units','normalized', ...
-    'Position',[0.56 0.62 0.12 0.28], ...
+uicontrol('Parent',panelCtrl,'Style','text','Units','normalized','Position',[0.46 0.62 0.09 0.28], ...
+    'String','Underlay:','BackgroundColor','w','HorizontalAlignment','right','FontWeight','bold');
+pop_under = uicontrol('Parent',panelCtrl,'Style','popupmenu','Units','normalized','Position',[0.56 0.62 0.12 0.28], ...
     'String',{'Mean(4D)','Baseline mean','Timepoint t'}, 'Callback',@changeUnderlay);
 
-sld_tp = uicontrol('Parent',panelCtrl,'Style','slider','Units','normalized', ...
-    'Position',[0.69 0.66 0.12 0.22], 'Min',1, 'Max',max(1,T), 'Value',1, ...
-    'SliderStep',[1/max(1,T-1) 10/max(1,T-1)], 'Callback',@changeUnderlay, ...
-    'Enable','off', 'TooltipString','Underlay timepoint (Alt + wheel)');
-
-lbl_tp = uicontrol('Parent',panelCtrl,'Style','text','Units','normalized', ...
-    'Position',[0.82 0.62 0.06 0.28], 'String','t=1', ...
-    'BackgroundColor','w','HorizontalAlignment','left');
+sld_tp = uicontrol('Parent',panelCtrl,'Style','slider','Units','normalized','Position',[0.69 0.66 0.12 0.22], ...
+    'Min',1, 'Max',max(1,T), 'Value',1, 'SliderStep',[1/max(1,T-1) 10/max(1,T-1)], 'Callback',@changeUnderlay, 'Enable','off', ...
+    'TooltipString','Underlay timepoint (Alt + wheel)');
+lbl_tp = uicontrol('Parent',panelCtrl,'Style','text','Units','normalized','Position',[0.82 0.62 0.06 0.28], ...
+    'String','t=1','BackgroundColor','w','HorizontalAlignment','left');
 
 % Windowing
-uicontrol('Parent',panelCtrl,'Style','text','Units','normalized', ...
-    'Position',[0.32 0.16 0.09 0.24], 'String','Underlay win:', ...
-    'BackgroundColor','w','HorizontalAlignment','right','FontWeight','bold');
-
-pop_win = uicontrol('Parent',panelCtrl,'Style','popupmenu','Units','normalized', ...
-    'Position',[0.42 0.16 0.11 0.24], ...
+uicontrol('Parent',panelCtrl,'Style','text','Units','normalized','Position',[0.32 0.16 0.09 0.24], ...
+    'String','Underlay win:','BackgroundColor','w','HorizontalAlignment','right','FontWeight','bold');
+pop_win = uicontrol('Parent',panelCtrl,'Style','popupmenu','Units','normalized','Position',[0.42 0.16 0.11 0.24], ...
     'String',{'Global 2–98','Slice 2–98','Manual %'}, 'Callback',@changeWindowing);
-
-sld_pLo = uicontrol('Parent',panelCtrl,'Style','slider','Units','normalized', ...
-    'Position',[0.54 0.20 0.10 0.18], 'Min',0, 'Max',50, 'Value',2, ...
-    'SliderStep',[1/50 5/50], 'Callback',@changeWindowing, ...
+sld_pLo = uicontrol('Parent',panelCtrl,'Style','slider','Units','normalized','Position',[0.54 0.20 0.10 0.18], ...
+    'Min',0, 'Max',50, 'Value',2, 'SliderStep',[1/50 5/50], 'Callback',@changeWindowing, ...
     'TooltipString','Manual low percentile');
-
-sld_pHi = uicontrol('Parent',panelCtrl,'Style','slider','Units','normalized', ...
-    'Position',[0.65 0.20 0.10 0.18], 'Min',50, 'Max',100, 'Value',98, ...
-    'SliderStep',[1/50 5/50], 'Callback',@changeWindowing, ...
+sld_pHi = uicontrol('Parent',panelCtrl,'Style','slider','Units','normalized','Position',[0.65 0.20 0.10 0.18], ...
+    'Min',50, 'Max',100, 'Value',98, 'SliderStep',[1/50 5/50], 'Callback',@changeWindowing, ...
     'TooltipString','Manual high percentile');
 
-% Scale & overlay
-uicontrol('Parent',panelCtrl,'Style','text','Units','normalized', ...
-    'Position',[0.76 0.16 0.07 0.24], 'String','Scale (±%)', ...
-    'BackgroundColor','w','HorizontalAlignment','right','FontWeight','bold');
+% Scale & overlay (NOTE: Sign control moved to top row in panelLeft)
+uicontrol('Parent',panelCtrl,'Style','text','Units','normalized','Position',[0.76 0.16 0.07 0.24], ...
+    'String','Scale (±%)','BackgroundColor','w','HorizontalAlignment','right','FontWeight','bold');
+sld_scale = uicontrol('Parent',panelCtrl,'Style','slider','Units','normalized','Position',[0.84 0.20 0.10 0.18], ...
+    'Min',0.1, 'Max',15, 'Value',min(15, max(1, pc_mag_default)), 'SliderStep',[1/150 1/15], 'Callback',@adjustScale, ...
+    'TooltipString','Label scale (maps locked) — Ctrl + wheel');
+lbl_scale = uicontrol('Parent',panelCtrl,'Style','text','Units','normalized','Position',[0.95 0.16 0.02 0.24], ...
+    'String',sprintf('%.1f',get(sld_scale,'Value')),'BackgroundColor','w','HorizontalAlignment','left');
 
-sld_scale = uicontrol('Parent',panelCtrl,'Style','slider','Units','normalized', ...
-    'Position',[0.84 0.20 0.10 0.18], 'Min',0.1, 'Max',15, ...
-    'Value',min(15, max(1, pc_mag_default)), ...
-    'SliderStep',[1/150 1/15], 'Callback',@adjustScale, ...
-    'TooltipString','Overlay scale (Ctrl + wheel)');
-
-lbl_scale = uicontrol('Parent',panelCtrl,'Style','text','Units','normalized', ...
-    'Position',[0.95 0.16 0.02 0.24], ...
-    'String',sprintf('%.1f',get(sld_scale,'Value')),'BackgroundColor','w', ...
-    'HorizontalAlignment','left');
-
-uicontrol('Parent',panelCtrl,'Style','text','Units','normalized', ...
-    'Position',[0.15 0.62 0.07 0.28], 'String','Alpha:', ...
-    'BackgroundColor','w','HorizontalAlignment','right','FontWeight','bold');
-
-pop_alpha = uicontrol('Parent',panelCtrl,'Style','popupmenu','Units','normalized', ...
-    'Position',[0.23 0.62 0.07 0.28], ...
+uicontrol('Parent',panelCtrl,'Style','text','Units','normalized','Position',[0.15 0.62 0.07 0.28], ...
+    'String','Alpha:','BackgroundColor','w','HorizontalAlignment','right','FontWeight','bold');
+pop_alpha = uicontrol('Parent',panelCtrl,'Style','popupmenu','Units','normalized','Position',[0.23 0.62 0.07 0.28], ...
     'String',{'Constant','|%Change|','Underlay'}, 'Callback',@changeOverlay);
-
-sld_again = uicontrol('Parent',panelCtrl,'Style','slider','Units','normalized', ...
-    'Position',[0.31 0.66 0.05 0.22], 'Min',0, 'Max',1.5, 'Value',1.0, ...
-    'TooltipString','Alpha gain', 'Callback',@changeOverlay);
-
-chk_overlay = uicontrol('Parent',panelCtrl,'Style','checkbox','Units','normalized', ...
-    'Position',[0.23 0.16 0.07 0.24], 'String','Show overlay','Value',1, ...
-    'BackgroundColor','w','Callback',@changeOverlay, ...
-    'TooltipString','Toggle overlay (O)');
-
-chk_showA = uicontrol('Parent',panelCtrl,'Style','checkbox','Units','normalized', ...
-    'Position',[0.14 0.16 0.08 0.24], 'String','Show α map', ...
-    'BackgroundColor','w','Callback',@changeOverlay, ...
-    'TooltipString','Toggle alpha map (A)');
-
-lbl_alpha = uicontrol('Parent',panelCtrl,'Style','text','Units','normalized', ...
-    'Position',[0.54 0.62 0.14 0.28], 'String','α[min med max]=[— — —]', ...
-    'BackgroundColor','w','HorizontalAlignment','center');
+sld_again = uicontrol('Parent',panelCtrl,'Style','slider','Units','normalized','Position',[0.31 0.66 0.05 0.22], ...
+    'Min',0, 'Max',1.5, 'Value',1.0, 'TooltipString','Alpha gain', 'Callback',@changeOverlay);
+chk_overlay = uicontrol('Parent',panelCtrl,'Style','checkbox','Units','normalized','Position',[0.23 0.16 0.07 0.24], ...
+    'String','Show overlay','Value',1,'BackgroundColor','w','Callback',@changeOverlay, 'TooltipString','Toggle overlay (O)');
+chk_showA = uicontrol('Parent',panelCtrl,'Style','checkbox','Units','normalized','Position',[0.14 0.16 0.08 0.24], ...
+    'String','Show α map','BackgroundColor','w','Callback',@changeOverlay, 'TooltipString','Toggle alpha map (A)');
+lbl_alpha = uicontrol('Parent',panelCtrl,'Style','text','Units','normalized','Position',[0.54 0.62 0.14 0.28], ...
+    'String','α[min med max]=[— — —]','BackgroundColor','w','HorizontalAlignment','center');
 
 % Status bar
-lbl_status = uicontrol('Parent',panelCtrl,'Style','text','Units','normalized', ...
-    'Position',[0.01 0.01 0.97 0.12], 'String','Ready', ...
-    'BackgroundColor','w','HorizontalAlignment','left','FontName','Consolas');
+lbl_status = uicontrol('Parent',panelCtrl,'Style','text','Units','normalized','Position',[0.01 0.01 0.97 0.12], ...
+    'String','Ready', 'BackgroundColor','w','HorizontalAlignment','left','FontName','Consolas');
 
 %% ---- Pack state ----
 S.Y = Y; S.X = X; S.Ydim = Ydim; S.Z = Z; S.T = T;
@@ -361,20 +261,22 @@ S.alpha_base = alpha_base;
 
 S.fig = fig;
 S.panelLeft = panelLeft; S.panelRight = panelRight; S.panelCtrl = panelCtrl;
-S.tl = tl; S.ax = ax; S.imU = imU; S.imP = imP; S.cb = cb; S.axTS = axTS;
-S.slices_per_page = slices_per_page; S.startSlice = 1;
+S.tl = tl; S.ax = ax; S.imU = imU; S.imP = imP; S.cb = []; S.axTS = axTS;
 
+S.slices_per_page = slices_per_page; S.startSlice = 1;
 S.lbl_page = lbl_page; S.lbl_status = lbl_status;
-S.pop_tiles = pop_tiles; S.pop_under = pop_under; S.sld_tp = sld_tp; S.lbl_tp = lbl_tp;
+S.pop_tiles = pop_tiles;
+S.pop_under = pop_under; S.sld_tp = sld_tp; S.lbl_tp = lbl_tp;
 S.pop_win = pop_win; S.sld_pLo = sld_pLo; S.sld_pHi = sld_pHi;
 S.sld_scale = sld_scale; S.lbl_scale = lbl_scale;
 S.pop_alpha = pop_alpha; S.sld_again = sld_again;
-S.chk_overlay = chk_overlay; S.chk_showA = chk_showA; S.lbl_alpha = lbl_alpha;
+S.chk_overlay = chk_overlay; S.chk_showA = chk_showA;
+S.lbl_alpha = lbl_alpha;
 
 % moved top-row items:
 S.btn_theme = btn_theme; S.isDark = false;
-S.lbl_sign = lbl_sign;  % label handle
-S.pop_sign = pop_sign;  % dropdown now in panelLeft
+S.lbl_sign  = lbl_sign;  % label handle
+S.pop_sign  = pop_sign;  % dropdown now in panelLeft
 
 % PSC controls
 S.chk_psc = chk_psc; S.pop_bmode = pop_bmode; S.edt_b1 = edt_b1; S.edt_b2 = edt_b2;
@@ -383,33 +285,53 @@ S.baseline_idx = baseline_idx; S.signal_idx = signal_idx;
 % 3D ROI controls + state
 S.chk_roi = chk_roi; S.sld_roirXY = sld_roirXY; S.lbl_roirXY = lbl_roirXY;
 S.pop_roishape = pop_roishape; S.sld_roirZ = sld_roirZ; S.lbl_roirZ = lbl_roirZ;
-S.roi_center = [];                         % [rA cA z]
-S.hROI  = gobjects(S.slices_per_page,1);   % per-tile ROI outlines
-S.hCross = gobjects(S.slices_per_page,2);  % per-tile crosshair [horiz, vert]
-S.roi3d_mask = [];                         % cached 3D mask
+S.roi_center = [];                       % [rA cA z]
+S.hROI = gobjects(S.slices_per_page,1);  % per-tile ROI outlines
+S.hCross = gobjects(S.slices_per_page,2);% per-tile crosshair [horiz, vert]
+S.roi3d_mask = [];                       % cached 3D mask
 S.currentSlices = zeros(1,S.slices_per_page); % slice index per tile
 
+% ---- Lock the visual appearance range here (±VLOCK) ----
+S.VLOCK = min(15, max(1, pc_mag_default));   % appearance anchor, e.g. 8..15
+
 guidata(fig,S);
+
+% ---- Create colorbar on the RIGHT of the tile grid (after S exists) ----
+placeColorbarRight(fig);
 
 % Global figure callbacks
 set(fig,'WindowButtonMotionFcn',@onMouseMove);
 set(fig,'WindowScrollWheelFcn',@onScroll);
 set(fig,'WindowKeyPressFcn',@onKeyPress);
 
-% Initial render + scale
+% Initial render
 renderPage(fig);
-adjustScale(sld_scale,[]);
+
+% Apply locked visual range across all axes once
+S = guidata(fig);
+for k = 1:numel(S.ax)
+    if isgraphics(S.ax(k)), caxis(S.ax(k), [-S.VLOCK S.VLOCK]); end
+end
+% Initialize colorbar ticks at fixed positions (±VLOCK, 0) with labels
+if isfield(S,'cb') && isgraphics(S.cb)
+    v0 = get(S.sld_scale,'Value');
+    S.cb.Ticks = [-S.VLOCK 0 S.VLOCK];
+    S.cb.TickLabels = {num2str(-v0,'%.0f'),'0',num2str(v0,'%.0f')};
+    S.cb.Label.String = '% change';
+end
+guidata(fig,S);
+
+% Finish setup
 applyTSFont(fig);
-applyTheme(S);  % apply initial theme styling
+applyTheme(S); % apply initial theme styling
 
 % Cleanup temp file (if created)
-if ~isempty(tmp_nii) && exist(tmp_nii,'file')
-    try, delete(tmp_nii); catch, end
-end
+if ~isempty(tmp_nii) && exist(tmp_nii,'file'), try, delete(tmp_nii); catch, end, end
 
-%% ---- PSC/Signal axes font defaults (must exist before first applyTSFont) ----
+%%
+% --- PSC/Signal axes font defaults (must exist before first applyTSFont) ---
 if ~isfield(S,'tsFontName')
-    S.tsFontName = 'Calibri';   % font family
+    S.tsFontName  = 'Calibri';   % font family
     S.tsFontTitle = 18;          % title font size
     S.tsFontLabel = 20;          % x/y label size
     S.tsFontXTick = 20;          % X tick label size
@@ -417,7 +339,6 @@ if ~isfield(S,'tsFontName')
 end
 guidata(fig,S);
 
-%%Section 4 — Tile Management, Underlay/Window/Overlay, ROI, Scale, Render
 %% =========================
 %% === CALLBACKS / FUNCS ===
 %% =========================
@@ -425,24 +346,14 @@ guidata(fig,S);
 function [spp, tl, ax, imU, imP] = createTiles(parentPanel, tiles)
     delete(findall(parentPanel,'Type','axes'));
     delete(findall(parentPanel,'Type','tiledlayout'));
-
     if tiles==4
-        tl  = tiledlayout(parentPanel,2,2,'Padding','compact','TileSpacing','compact');
-        spp = 4;
+        tl = tiledlayout(parentPanel,2,2,'Padding','compact','TileSpacing','compact'); spp = 4;
     else
-        tl  = tiledlayout(parentPanel,2,4,'Padding','compact','TileSpacing','compact');
-        spp = 8;
+        tl = tiledlayout(parentPanel,2,4,'Padding','compact','TileSpacing','compact'); spp = 8;
     end
-
-    ax  = gobjects(spp,1);
-    imU = gobjects(spp,1);
-    imP = gobjects(spp,1);
-
+    ax  = gobjects(spp,1); imU = gobjects(spp,1); imP = gobjects(spp,1);
     for k = 1:spp
-        ax(k) = nexttile(tl,k);
-        hold(ax(k),'on');
-        axis(ax(k),'image');
-        axis(ax(k),'off');
+        ax(k) = nexttile(tl,k); hold(ax(k),'on'); axis(ax(k),'image'); axis(ax(k),'off');
         set(ax(k),'ButtonDownFcn',@(h,e)onClickVoxel(h,e,NaN));
     end
 end
@@ -450,106 +361,137 @@ end
 function changeTiles(src,~)
     fig = ancestor(src,'figure'); S = guidata(fig);
     val = get(S.pop_tiles,'Value'); tiles = 4; if val==2, tiles=8; end
-
     [spp, tl, ax, imU, imP] = createTiles(S.panelLeft, tiles);
     S.slices_per_page = spp; S.tl = tl; S.ax = ax; S.imU = imU; S.imP = imP;
     S.hROI = gobjects(spp,1); S.hCross = gobjects(spp,2);
-
-    delete(S.cb);
-    try, S.cb = colorbar(S.tl,'Location','southoutside'); catch, S.cb=colorbar('southoutside'); end
     guidata(fig,S);
 
+    % Put colorbar back on the right of the entire grid
+    placeColorbarRight(fig);
+
     % keep top-row controls above tiles
+    S = guidata(fig);
     uistack(S.btn_theme,'top'); uistack(S.lbl_sign,'top'); uistack(S.pop_sign,'top');
 
     renderPage(fig);
+
+    % Re-apply locked appearance (±VLOCK) and relabel ticks
+    S = guidata(fig);
+    for k = 1:numel(S.ax)
+        if isgraphics(S.ax(k)), caxis(S.ax(k), [-S.VLOCK S.VLOCK]); end
+    end
+    if isfield(S,'cb') && isgraphics(S.cb)
+        v = get(S.sld_scale,'Value');
+        S.cb.Ticks = [-S.VLOCK 0 S.VLOCK];
+        S.cb.TickLabels = {num2str(-v,'%.0f'),'0',num2str(v,'%.0f')};
+        S.cb.Label.String = '% change';
+    end
+    guidata(fig,S);
 end
 
 function prevPage(src,~)
     fig = ancestor(src,'figure'); S = guidata(fig);
     S.startSlice = max(S.startSlice - S.slices_per_page, 1);
-    guidata(fig,S);
-    renderPage(fig);
+    guidata(fig,S); renderPage(fig);
+    % maintain lock
+    S = guidata(fig);
+    for k = 1:numel(S.ax), if isgraphics(S.ax(k)), caxis(S.ax(k),[-S.VLOCK S.VLOCK]); end, end
 end
 
 function nextPage(src,~)
     fig = ancestor(src,'figure'); S = guidata(fig);
     S.startSlice = min(S.startSlice + S.slices_per_page, max(S.Z - S.slices_per_page + 1, 1));
-    guidata(fig,S);
-    renderPage(fig);
+    guidata(fig,S); renderPage(fig);
+    % maintain lock
+    S = guidata(fig);
+    for k = 1:numel(S.ax), if isgraphics(S.ax(k)), caxis(S.ax(k),[-S.VLOCK S.VLOCK]); end, end
 end
 
 function changeUnderlay(src,~)
     fig = ancestor(src,'figure'); S = guidata(fig);
-    if get(S.pop_under,'Value')==3
-        set(S.sld_tp,'Enable','on');
-    else
-        set(S.sld_tp,'Enable','off');
-    end
+    if get(S.pop_under,'Value')==3, set(S.sld_tp,'Enable','on'); else, set(S.sld_tp,'Enable','off'); end
     set(S.lbl_tp,'String',sprintf('t=%d', round(get(S.sld_tp,'Value'))));
     renderPage(fig);
+    % keep lock
+    S = guidata(fig);
+    for k = 1:numel(S.ax), if isgraphics(S.ax(k)), caxis(S.ax(k),[-S.VLOCK S.VLOCK]); end, end
 end
 
-function changeWindowing(src,~)
-    fig = ancestor(src,'figure');
-    renderPage(fig);
+function changeWindowing(src,~), fig = ancestor(src,'figure'); renderPage(fig);
+    S = guidata(fig); for k=1:numel(S.ax), if isgraphics(S.ax(k)), caxis(S.ax(k),[-S.VLOCK S.VLOCK]); end, end
 end
-
-function changeOverlay(src,~)
-    fig = ancestor(src,'figure');
-    renderPage(fig);
+function changeOverlay(src,~),   fig = ancestor(src,'figure'); renderPage(fig);
+    S = guidata(fig);
+    if logical(get(S.chk_showA,'Value'))
+        for k=1:numel(S.ax), if isgraphics(S.ax(k)), caxis(S.ax(k),[0 1]); end, end
+    else
+        for k=1:numel(S.ax), if isgraphics(S.ax(k)), caxis(S.ax(k),[-S.VLOCK S.VLOCK]); end, end
+    end
 end
 
 function roiChanged(src,~)
     fig = ancestor(src,'figure'); S = guidata(fig);
     set(S.lbl_roirXY,'String',sprintf('%d',round(get(S.sld_roirXY,'Value'))));
     set(S.lbl_roirZ,'String',sprintf('%d',round(get(S.sld_roirZ,'Value'))));
-
-    if get(S.pop_roishape,'Value')==1
-        set(S.sld_roirZ,'Enable','off');
-    else
-        set(S.sld_roirZ,'Enable','on');
-    end
-
+    if get(S.pop_roishape,'Value')==1, set(S.sld_roirZ,'Enable','off'); else, set(S.sld_roirZ,'Enable','on'); end
     S.roi3d_mask = [];
     guidata(fig,S);
-
     if ~isempty(S.roi_center) && logical(get(S.chk_roi,'Value'))
         plotTSAtCenter(fig);
         renderPage(fig);
+        % keep lock
+        S = guidata(fig);
+        for k=1:numel(S.ax), if isgraphics(S.ax(k)), caxis(S.ax(k),[-S.VLOCK S.VLOCK]); end, end
     end
 end
 
+%% ====== SCALE HANDLER (LABEL-ONLY; MAPS LOCKED) ======
 function adjustScale(src,~)
-    fig = ancestor(src,'figure'); S = guidata(fig);
-    showA = logical(get(S.chk_showA,'Value'));
+    % Relabel-only scale: keep CLim fixed at ±S.VLOCK (maps unchanged)
+    fig = ancestor(src,'figure');
+    S = guidata(fig);
+    if ~isstruct(S), return; end
+
+    showA = isfield(S,'chk_showA') && isgraphics(S.chk_showA) && logical(get(S.chk_showA,'Value'));
+    v = get(S.sld_scale,'Value');
+    if ~isfinite(v) || v <= 0
+        v = 0.1;
+        set(S.sld_scale,'Value',v);
+    end
 
     if showA
         for k = 1:numel(S.ax)
-            if isgraphics(S.ax(k)), caxis(S.ax(k),[0 1]); end
+            if isgraphics(S.ax(k)), caxis(S.ax(k), [0 1]); end
         end
-        S.cb.Limits = [0 1];
-        S.cb.Ticks  = [0 0.5 1];
-        S.cb.Label.String = 'alpha';
-        set(S.lbl_scale,'String','—');
+        if isfield(S,'cb') && isgraphics(S.cb)
+            S.cb.Ticks = [0 .5 1];
+            S.cb.TickLabels = {'0','0.5','1'};
+            S.cb.Label.String = 'alpha';
+        end
+        if isfield(S,'lbl_scale') && isgraphics(S.lbl_scale)
+            set(S.lbl_scale,'String','—');
+        end
     else
-        v = get(S.sld_scale,'Value');
-        if v<=0, v=0.1; set(S.sld_scale,'Value',v); end
+        % Keep appearance locked
         for k = 1:numel(S.ax)
-            if isgraphics(S.ax(k)), caxis(S.ax(k),[-v v]); end
+            if isgraphics(S.ax(k)), caxis(S.ax(k), [-S.VLOCK S.VLOCK]); end
         end
-        S.cb.Limits = [-v v];
-        S.cb.Ticks  = [-v 0 v];
-        S.cb.TickLabels = {num2str(-v,'%.0f'),'0',num2str(v,'%.0f')};
-        S.cb.Label.String = '% change';
-        set(S.lbl_scale,'String',sprintf('%.1f',v));
+        % Ticks remain at fixed positions (±VLOCK, 0) but labels show ±v
+        if isfield(S,'cb') && isgraphics(S.cb)
+            S.cb.Ticks = [-S.VLOCK 0 S.VLOCK];
+            S.cb.TickLabels = {num2str(-v,'%.0f'),'0',num2str(v,'%.0f')};
+            S.cb.Label.String = '% change';
+        end
+        if isfield(S,'lbl_scale') && isgraphics(S.lbl_scale)
+            set(S.lbl_scale,'String',sprintf('%.1f',v));
+        end
     end
+
     guidata(fig,S);
 end
 
 function renderPage(fig)
     S = guidata(fig);
-
     if ~isfield(S,'lbl_page') || ~ishandle(S.lbl_page)
         S.lbl_page = findobj(S.panelCtrl,'Type','uicontrol','Style','text','Tag','lbl_page');
     end
@@ -558,25 +500,24 @@ function renderPage(fig)
     uSrc = get(S.pop_under,'Value'); % 1 mean, 2 base, 3 timepoint
     switch uSrc
         case 1, U = S.U_mean4D; glo = S.und_lo_mean; ghi = S.und_hi_mean;
-        case 2, U = S.U_base;    glo = S.und_lo_base; ghi = S.und_hi_base;
+        case 2, U = S.U_base;   glo = S.und_lo_base; ghi = S.und_hi_base;
         otherwise
             tp = max(1, min(S.T, round(get(S.sld_tp,'Value'))));
             U = S.Y(:,:,:,tp);
-            flat = U(isfinite(U));
-            if isempty(flat), glo=0; ghi=1; else, [glo,ghi] = robust_window(U); end
+            flat = U(isfinite(U)); if isempty(flat), glo=0; ghi=1; else, [glo,ghi] = robust_window(U); end
     end
     set(S.lbl_tp,'String',sprintf('t=%d', round(get(S.sld_tp,'Value'))));
 
     % Controls
-    sign_mode = get(S.pop_sign,'Value'); % 1 both, 2 +, 3 −
-    win_mode  = get(S.pop_win,'Value');  % 1 global, 2 slice, 3 manual
-    pLo = get(S.sld_pLo,'Value'); pHi = get(S.sld_pHi,'Value'); if pHi<=pLo, pHi=pLo+eps; end
-    showA = logical(get(S.chk_showA,'Value'));
+    sign_mode   = get(S.pop_sign,'Value');   % 1 both, 2 +, 3 −
+    win_mode    = get(S.pop_win,'Value');    % 1 global, 2 slice, 3 manual
+    pLo         = get(S.sld_pLo,'Value');
+    pHi         = get(S.sld_pHi,'Value'); if pHi<=pLo, pHi=pLo+eps; end
+    showA       = logical(get(S.chk_showA,'Value'));
     showOverlay = logical(get(S.chk_overlay,'Value'));
-    roi_on = logical(get(S.chk_roi,'Value'));
+    roi_on      = logical(get(S.chk_roi,'Value'));
 
-    first = S.startSlice;
-    last  = min(first + S.slices_per_page - 1, S.Z);
+    first = S.startSlice; last  = min(first + S.slices_per_page - 1, S.Z);
     slices = first:last;
     S.currentSlices(:) = 0;
     S.currentSlices(1:numel(slices)) = slices;
@@ -584,10 +525,7 @@ function renderPage(fig)
 
     % Build 3D ROI mask if needed
     if roi_on && ~isempty(S.roi_center)
-        if isempty(S.roi3d_mask)
-            S.roi3d_mask = roi_mask_3d(S);
-            guidata(fig,S);
-        end
+        if isempty(S.roi3d_mask), S.roi3d_mask = roi_mask_3d(S); guidata(fig,S); end
     else
         S.roi3d_mask = [];
         guidata(fig,S);
@@ -597,13 +535,11 @@ function renderPage(fig)
 
     for k = 1:S.slices_per_page
         axk = S.ax(k);
-
         if k <= numel(slices)
-            idx = slices(k);
-
-            Uslc0  = U(:,:,idx);
+            idx   = slices(k);
+            Uslc0 = U(:,:,idx);
             PCslc0 = S.pc(:,:,idx);
-            Mslc0  = S.mask(:,:,idx);
+            Mslc0 = S.mask(:,:,idx);
 
             % Display orientation
             Uslc  = rot90(Uslc0,-1);
@@ -620,10 +556,8 @@ function renderPage(fig)
 
             % Window
             switch win_mode
-                case 1
-                    lo_use = glo; hi_use = ghi;
-                case 2
-                    [lo_use,hi_use] = robust_window(Uslc);
+                case 1, lo_use = glo; hi_use = ghi;
+                case 2, [lo_use,hi_use] = robust_window(Uslc);
                 otherwise
                     flat = Uslc(isfinite(Uslc));
                     if isempty(flat), lo_use=0; hi_use=1;
@@ -638,33 +572,26 @@ function renderPage(fig)
             A = compute_alpha(S, PCslc, Uslc, Mslc & mask_sign);
             A_all = [A_all; A(isfinite(A) & (A>0))]; %#ok<AGROW>
 
-            % Draw
+            % Draw (wire clicks and context menu)
             if ~isgraphics(S.imU(k))
-                axes(axk);
-                cla(axk); hold(axk,'on'); axis(axk,'image'); axis(axk,'off');
+                axes(axk); cla(axk); hold(axk,'on'); axis(axk,'image'); axis(axk,'off');
                 set(axk,'ButtonDownFcn',@(h,e)onClickVoxel(h,e,idx));
-
                 S.imU(k) = image(axk, to_rgb_gray(Uslc,lo_use,hi_use), ...
-                    'ButtonDownFcn',@(h,e)onClickVoxel(h,e,idx), ...
-                    'HitTest','on','PickableParts','all');
-
+                                  'ButtonDownFcn',@(h,e)onClickVoxel(h,e,idx), ...
+                                  'HitTest','on','PickableParts','all');
                 S.imP(k) = imagesc(axk, PCvis, 'HitTest','off','PickableParts','none');
                 title(axk, sprintf('Z = %d', idx));
-
                 % context menu
                 cm = uicontextmenu(S.fig);
-                uimenu(cm,'Label','Set ROI center here', ...
-                    'Callback',@(s,e)onClickVoxel(axk,[],idx));
-                uimenu(cm,'Label','Set start slice here', ...
-                    'Callback',@(s,e)setStartSlice(idx));
-                uimenu(cm,'Label','Window underlay from this slice (2–98%)', ...
-                    'Callback',@(s,e)setSliceWindow(axk, Uslc));
+                uimenu(cm,'Label','Set ROI center here','Callback',@(s,e)onClickVoxel(axk,[],idx));
+                uimenu(cm,'Label','Set start slice here','Callback',@(s,e)setStartSlice(idx));
+                uimenu(cm,'Label','Window underlay from this slice (2–98%)','Callback',@(s,e)setSliceWindow(axk, Uslc));
                 set(S.imU(k),'UIContextMenu',cm);
             else
                 set(axk,'ButtonDownFcn',@(h,e)onClickVoxel(h,e,idx));
                 set(S.imU(k),'CData', to_rgb_gray(Uslc,lo_use,hi_use), ...
-                    'ButtonDownFcn',@(h,e)onClickVoxel(h,e,idx), ...
-                    'HitTest','on','PickableParts','all');
+                             'ButtonDownFcn',@(h,e)onClickVoxel(h,e,idx), ...
+                             'HitTest','on','PickableParts','all');
                 set(S.imP(k),'CData', PCvis, 'HitTest','off','PickableParts','none');
                 title(axk, sprintf('Z = %d', idx));
             end
@@ -675,8 +602,7 @@ function renderPage(fig)
                 if any(maskSlice(:))
                     maskDisp = rot90(maskSlice,-1);
                     if isgraphics(S.hROI(k)), delete(S.hROI(k)); end
-                    [~, h] = contour(axk, double(maskDisp), [0.5 0.5], ...
-                        'LineColor','m', 'LineWidth',1.2);
+                    [~, h] = contour(axk, double(maskDisp), [0.5 0.5], 'LineColor','m', 'LineWidth',1.2);
                     if ~isempty(h), S.hROI(k) = h; else, S.hROI(k) = gobjects(1); end
                 else
                     if isgraphics(S.hROI(k)), delete(S.hROI(k)); S.hROI(k) = gobjects(1); end
@@ -685,15 +611,13 @@ function renderPage(fig)
                 if isgraphics(S.hROI(k)), delete(S.hROI(k)); S.hROI(k) = gobjects(1); end
             end
 
-            % Crosshair on clicked voxel
+            % Crosshair on clicked voxel (only for matching slice)
             if ~isempty(S.roi_center) && S.roi_center(3)==idx
-                disp_i = S.roi_center(2);         % cA
-                disp_j = S.X - S.roi_center(1) + 1; % X - rA + 1
+                disp_i = S.roi_center(2);            % cA
+                disp_j = S.X - S.roi_center(1) + 1;  % X - rA + 1
                 nx = S.X; ny = S.Ydim;
-
                 if isgraphics(S.hCross(k,1)), delete(S.hCross(k,1)); end
                 if isgraphics(S.hCross(k,2)), delete(S.hCross(k,2)); end
-
                 S.hCross(k,1) = plot(axk, [1 nx], [disp_i disp_i], 'w-', 'LineWidth', 0.8);
                 S.hCross(k,2) = plot(axk, [disp_j disp_j], [1 ny], 'w-', 'LineWidth', 0.8);
             else
@@ -705,8 +629,7 @@ function renderPage(fig)
             if showOverlay
                 set(S.imP(k),'Visible','on');
                 if showA
-                    set(S.imP(k),'CData', A, 'AlphaData', 1, 'CDataMapping','scaled');
-                    caxis(axk,[0 1]);
+                    set(S.imP(k),'CData', A, 'AlphaData', 1, 'CDataMapping','scaled'); caxis(axk,[0 1]);
                 else
                     set(S.imP(k),'CData', PCvis, 'AlphaData', A, 'CDataMapping','scaled');
                 end
@@ -717,65 +640,58 @@ function renderPage(fig)
             set(axk,'Visible','on');
         else
             cla(axk); set(axk,'Visible','off');
-            if isgraphics(S.hROI(k)), delete(S.hROI(k));  S.hROI(k)=gobjects(1); end
+            if isgraphics(S.hROI(k)), delete(S.hROI(k)); S.hROI(k)=gobjects(1); end
             if isgraphics(S.hCross(k,1)), delete(S.hCross(k,1)); S.hCross(k,1)=gobjects(1); end
             if isgraphics(S.hCross(k,2)), delete(S.hCross(k,2)); S.hCross(k,2)=gobjects(1); end
         end
     end
 
     % Alpha stats
-    if isempty(A_all), amin=NaN; amed=NaN; amax=NaN;
-    else, amin=min(A_all); amed=median(A_all); amax=max(A_all);
-    end
+    if isempty(A_all), amin=NaN; amed=NaN; amax=NaN; else, amin=min(A_all); amed=median(A_all); amax=max(A_all); end
     set(S.lbl_alpha,'String',sprintf('α[min med max]=[%.2f %.2f %.2f]',amin,amed,amax));
 
     if showOverlay && showA
-        S.cb.Label.String = 'alpha';
-        S.cb.Limits=[0 1]; S.cb.Ticks=[0 .5 1];
+        S.cb.Label.String = 'alpha'; S.cb.Limits=[0 1]; S.cb.Ticks=[0 .5 1];
     else
         S.cb.Label.String = '% change';
-        adjustScale(S.sld_scale,[]);
+        % Note: CLim lock is applied outside in callers to keep appearance stable
     end
+
     guidata(fig,S);
 end
 
 function setStartSlice(idx)
     fig = gcbf; S = guidata(fig);
     S.startSlice = max(1, min(S.Z - S.slices_per_page + 1, idx));
-    guidata(fig,S);
-    renderPage(fig);
+    guidata(fig,S); renderPage(fig);
+    % keep lock
+    S = guidata(fig);
+    for k=1:numel(S.ax), if isgraphics(S.ax(k)), caxis(S.ax(k),[-S.VLOCK S.VLOCK]); end, end
 end
 
 function setSliceWindow(axk, Uslc)
     fig = ancestor(axk,'figure'); S = guidata(fig);
-    [lo,hi] = robust_window(Uslc); %#ok<ASGLU> % (we flip to Slice mode)
-    set(S.pop_win,'Value',2);      % Slice 2–98
+    [~,~] = robust_window(Uslc); % just switch mode; limits are locked visually
+    set(S.pop_win,'Value',2);     % Slice 2–98
     renderPage(fig);
+    S = guidata(fig);
+    for k=1:numel(S.ax), if isgraphics(S.ax(k)), caxis(S.ax(k),[-S.VLOCK S.VLOCK]); end, end
 end
 
-
-%%Section 5 — Time-Series / PSC, Baseline, ROI Mask
 function refreshTSLabel(axTS)
     fig = ancestor(axTS,'figure'); S = guidata(fig);
-
     % ---- PSC/Signal plot font settings ----
-    S.tsFontName  = 'Calibri';  % font family
-    S.tsFontTitle = 18;         % title size
-    S.tsFontLabel = 20;         % x/y label size
-    S.tsFontXTick = 20;         % X tick font size
-    S.tsFontYTick = 20;         % Y tick font size
-    guidata(fig,S);             % store before calling helpers
-
-    if logical(get(S.chk_psc,'Value'))
-        ylabel(axTS,'PSC (%)');
-    else
-        ylabel(axTS,'Signal (a.u.)');
-    end
+    S.tsFontName   = 'Calibri';
+    S.tsFontTitle  = 18;
+    S.tsFontLabel  = 20;
+    S.tsFontXTick  = 20;
+    S.tsFontYTick  = 20;
+    guidata(fig,S);
+    if logical(get(S.chk_psc,'Value')), ylabel(axTS,'PSC (%)'); else, ylabel(axTS,'Signal (a.u.)'); end
 end
 
 function applyTSFont(fig)
-    S = guidata(fig);
-    % Ensure fields exist (robust even if something cleared them)
+    S  = guidata(fig);
     if ~isfield(S,'tsFontName'),  S.tsFontName  = 'Calibri'; end
     if ~isfield(S,'tsFontTitle'), S.tsFontTitle = 18;        end
     if ~isfield(S,'tsFontLabel'), S.tsFontLabel = 16;        end
@@ -784,6 +700,7 @@ function applyTSFont(fig)
     guidata(fig,S);
 
     ax = S.axTS;
+
     set(ax,'FontName',S.tsFontName);
     set(get(ax,'Title'),  'FontName',S.tsFontName,'FontSize',S.tsFontTitle,'FontWeight','bold');
     set(get(ax,'XLabel'), 'FontName',S.tsFontName,'FontSize',S.tsFontLabel);
@@ -806,67 +723,46 @@ end
 function onClickVoxel(h,~, zIdx)
     fig = ancestor(h,'figure'); S = guidata(fig);
     ax = ancestor(h,'axes'); if isnan(zIdx), return; end
-
-    pt = get(ax,'CurrentPoint');
-    xB = pt(1,1); yB = pt(1,2);
+    pt = get(ax,'CurrentPoint'); xB = pt(1,1); yB = pt(1,2);
     xL = get(ax,'XLim'); yL = get(ax,'YLim');
-
     nx = S.X; ny = S.Ydim;
     jB = round( ((xB - xL(1)) / (xL(2) - xL(1))) * (nx-1) + 1 );
     iB = round( ((yB - yL(1)) / (yL(2) - yL(1))) * (ny-1) + 1 );
-
     if iB<1 || iB>ny || jB<1 || jB>nx, return; end
-
-    % Convert back to original array indices (inverse of rot90(A,-1))
-    rA = S.X - jB + 1;  % row in original (X)
-    cA = iB;            % col in original (Y)
+    rA = S.X - jB + 1; cA = iB;
     if rA<1 || rA>S.X || cA<1 || cA>S.Ydim || zIdx<1 || zIdx>S.Z, return; end
-
     S.roi_center = [rA cA zIdx];
     S.roi3d_mask = [];
     guidata(fig,S);
-
     plotTSAtCenter(fig);
     renderPage(fig);
+    % keep lock
+    S = guidata(fig); for k=1:numel(S.ax), if isgraphics(S.ax(k)), caxis(S.ax(k),[-S.VLOCK S.VLOCK]); end, end
 end
 
 function plotTSAtCenter(fig)
-    S = guidata(fig); if isempty(S.roi_center), return; end
-
-    rA = S.roi_center(1);
-    cA = S.roi_center(2);
-    zIdx = S.roi_center(3);
-    axTS = S.axTS;
-    cla(axTS);
-
+    S = guidata(fig);
+    if isempty(S.roi_center), return; end
+    rA = S.roi_center(1); cA = S.roi_center(2); zIdx = S.roi_center(3);
+    axTS = S.axTS; cla(axTS);
     ts_vox = squeeze(S.Y(rA, cA, zIdx, :));
     useROI = logical(get(S.chk_roi,'Value'));
     plotPSC = logical(get(S.chk_psc,'Value'));
     [b1,b2] = get_baseline_window(S);
-
     haveROI = false;
     if useROI
-        if isempty(S.roi3d_mask)
-            S.roi3d_mask = roi_mask_3d(S); guidata(fig,S);
-        end
+        if isempty(S.roi3d_mask), S.roi3d_mask = roi_mask_3d(S); guidata(fig,S); end
         lin = find(S.roi3d_mask(:) & S.mask(:));
         if ~isempty(lin)
             Y2 = reshape(S.Y, [], S.T);
             ts_roi = mean(Y2(lin,:),1)'; haveROI = true;
         end
     end
-
     if plotPSC
-        b1c = max(1, min(S.T, round(b1)));
-        b2c = max(1, min(S.T, round(b2)));
-        if b2c<=b1c, b2c=min(S.T,b1c+1); end
-
-        base_vox = mean(ts_vox(b1c:b2c), 'omitnan');
-        psc_vox  = 100 * (ts_vox - base_vox) / max(base_vox, eps);
-
+        b1c = max(1, min(S.T, round(b1))); b2c = max(1, min(S.T, round(b2))); if b2c<=b1c, b2c=min(S.T,b1c+1); end
+        base_vox = mean(ts_vox(b1c:b2c), 'omitnan'); psc_vox = 100 * (ts_vox - base_vox) / max(base_vox, eps);
         if haveROI
-            base_roi = mean(ts_roi(b1c:b2c), 'omitnan');
-            psc_roi  = 100 * (ts_roi - base_roi) / max(base_roi, eps);
+            base_roi = mean(ts_roi(b1c:b2c), 'omitnan'); psc_roi = 100 * (ts_roi - base_roi) / max(base_roi, eps);
             plot(axTS, 1:S.T, psc_roi, 'LineWidth',1.8); hold(axTS,'on');
             plot(axTS, 1:S.T, psc_vox, '--', 'LineWidth',1.0);
             legend(axTS, {'ROI mean PSC','Voxel PSC'}, 'Location','best'); legend(axTS,'boxoff');
@@ -886,30 +782,22 @@ function plotTSAtCenter(fig)
         ylabel(axTS,'Signal (a.u.)');
         title(axTS, sprintf('Time series @ [%d,%d,%d]%s', rA, cA, zIdx, tern(haveROI,' (ROI avg)','')));
     end
-
-    grid(axTS,'on');
-    xlabel(axTS,'Time (frames)');
-
+    grid(axTS,'on'); xlabel(axTS,'Time (frames)');
     bl = min(S.baseline_idx); bh = max(S.baseline_idx);
     sl = min(S.signal_idx);   sh = max(S.signal_idx);
     yl = ylim(axTS);
     patch(axTS, [bl bh bh bl], [yl(1) yl(1) yl(2) yl(2)], [0.85 0.90 1.00], 'FaceAlpha',0.25, 'EdgeColor','none');
     patch(axTS, [sl sh sh sl], [yl(1) yl(1) yl(2) yl(2)], [1.00 0.90 0.90], 'FaceAlpha',0.25, 'EdgeColor','none');
     uistack(findobj(axTS,'Type','line'),'top');
-
     applyTSFont(fig);
 end
 
 function mask3 = roi_mask_3d(S)
     if isempty(S.roi_center), mask3 = false(S.X,S.Ydim,S.Z); return; end
-
-    rA = S.roi_center(1);
-    cA = S.roi_center(2);
-    zA = S.roi_center(3);
+    rA = S.roi_center(1); cA = S.roi_center(2); zA = S.roi_center(3);
     Rxy = round(get(S.sld_roirXY,'Value'));
-    shape = get(S.pop_roishape,'Value'); % 1: Sphere, 2: Cylinder
+    shape = get(S.pop_roishape,'Value');  % 1: Sphere, 2: Cylinder
     Dz = round(get(S.sld_roirZ,'Value'));
-
     [RR,CC,ZZ] = ndgrid(1:S.X, 1:S.Ydim, 1:S.Z);
     switch shape
         case 1
@@ -920,9 +808,7 @@ function mask3 = roi_mask_3d(S)
     mask3 = mask3 & S.mask;
 end
 
-function out = tern(cond, a, b)
-    if cond, out = a; else, out = b; end
-end
+function out = tern(cond, a, b), if cond, out = a; else, out = b; end, end
 
 function [b1,b2] = get_baseline_window(S)
     if get(S.pop_bmode,'Value') == 1
@@ -930,66 +816,44 @@ function [b1,b2] = get_baseline_window(S)
     else
         b1 = str2double(get(S.edt_b1,'String'));
         b2 = str2double(get(S.edt_b2,'String'));
-        if isnan(b1) || isnan(b2)
-            b1 = min(S.baseline_idx); b2 = max(S.baseline_idx);
-        end
+        if isnan(b1) || isnan(b2), b1 = min(S.baseline_idx); b2 = max(S.baseline_idx); end
     end
 end
 
-%%Section 6 — Theme, Alpha/Window Helpers, Hover/Scroll/Keys
 %% ---- THEME / INTERACTION HELPERS ----
 function A = compute_alpha(S, PCslc, Uslc, validMask)
-    base  = S.alpha_base;
-    again = get(S.sld_again,'Value');
-    mode  = get(S.pop_alpha,'Value');
-
+    base = S.alpha_base; again = get(S.sld_again,'Value'); mode = get(S.pop_alpha,'Value');
     switch mode
-        case 1  % Constant
-            modF = ones(size(PCslc));
-        case 2  % |%Change|
-            absPC = abs(PCslc);
-            lo = S.pc_abs_lo; hi = S.pc_abs_hi; if hi<=lo, hi=lo+eps; end
-            modF = (absPC - lo) / (hi - lo);
-            modF = max(0,min(1,modF));
-        case 3  % Underlay
-            [ulo,uhi] = robust_window(Uslc);
-            if uhi<=ulo, uhi=ulo+eps; end
-            modF = (double(Uslc) - ulo) / (uhi - ulo);
-            modF = max(0,min(1,modF));
-        otherwise
-            modF = ones(size(PCslc));
+        case 1, modF = ones(size(PCslc));
+        case 2
+            absPC = abs(PCslc); lo = S.pc_abs_lo; hi = S.pc_abs_hi; if hi<=lo, hi=lo+eps; end
+            modF = (absPC - lo) / (hi - lo); modF = max(0,min(1,modF));
+        case 3
+            [ulo,uhi] = robust_window(Uslc); if uhi<=ulo, uhi=ulo+eps; end
+            modF = (double(Uslc) - ulo) / (uhi - ulo); modF = max(0,min(1,modF));
+        otherwise, modF = ones(size(PCslc));
     end
-
-    A = base * (again .* modF);
-    A(~validMask) = 0;
-    A = max(0,min(1,A));
+    A = base * (again .* modF); A(~validMask) = 0; A = max(0,min(1,A));
 end
 
-function [lo,hi] = robust_window(U)
+function [lo,hi]=robust_window(U)
     U = U(isfinite(U));
-    if isempty(U)
-        lo=0; hi=1;
-    else
-        lo=prctile(U,2); hi=prctile(U,98);
-        if hi<=lo, hi=lo+eps; end
+    if isempty(U), lo=0; hi=1;
+    else, lo=prctile(U,2); hi=prctile(U,98); if hi<=lo, hi=lo+eps; end
     end
 end
 
-function RGB = to_rgb_gray(slice2d,lo,hi)
+function RGB=to_rgb_gray(slice2d,lo,hi)
     if hi<=lo, hi=lo+eps; end
-    N = (double(slice2d)-lo)/(hi-lo);
-    N = max(0,min(1,N));
-    RGB = repmat(N,[1 1 3]);
+    N=(double(slice2d)-lo)/(hi-lo); N=max(0,min(1,N));
+    RGB=repmat(N,[1 1 3]);
 end
 
 function cmap = gbhot_diverging(n)
     if mod(n,2)==1, n=n+1; end
-    half = n/2;
-    t = linspace(0,1,half)'; g = (1-t); c = t.*(1-t); b = t;
-    neg = [0*g + 0*c, 1*g + 1*c, 0*g + 1*b];  % greenish→blueish ramp
-    neg = neg .* (1 - t);
-    pos = hot(half);
-    cmap = [neg; pos];
+    half = n/2; t = linspace(0,1,half)'; g = (1-t); c = t.*(1-t); b = t;
+    neg = [0*g + 0*c, 1*g + 1*c, 0*g + 1*b]; neg = neg .* (1 - t);
+    pos = hot(half); cmap = [neg; pos];
 end
 
 function toggleTheme(src,~)
@@ -1000,13 +864,12 @@ end
 
 function applyTheme(S)
     if S.isDark
-        bg=[0.12 0.12 0.12]; fg=[0.95 0.95 0.95]; axbg=[0.10 0.10 0.10];
+        bg = [0.12 0.12 0.12]; fg = [0.95 0.95 0.95]; axbg = [0.10 0.10 0.10];
         set(S.btn_theme,'String','Light theme');
     else
-        bg=[1 1 1]; fg=[0 0 0]; axbg=[1 1 1];
+        bg = [1 1 1]; fg = [0 0 0]; axbg = [1 1 1];
         set(S.btn_theme,'String','Dark theme');
     end
-
     set(S.fig,'Color',bg);
     set(S.panelLeft,'BackgroundColor',bg);
     set(S.panelRight,'BackgroundColor',bg);
@@ -1027,29 +890,22 @@ function applyTheme(S)
     end
     try, set(S.cb,'Color',fg); end
 
-    % keep top-row controls above tiles
-    uistack(S.btn_theme,'top');
-    uistack(S.lbl_sign,'top');
-    uistack(S.pop_sign,'top');
+    uistack(S.btn_theme,'top'); uistack(S.lbl_sign,'top'); uistack(S.pop_sign,'top');
 end
 
 function onMouseMove(fig,~)
-    % Robust hover handler (no errors when not over our axes)
     S = guidata(fig);
     if ~isstruct(S) || ~isfield(S,'ax') || isempty(S.ax) || ~all(ishandle(S.ax))
         return;
     end
-
     obj = hittest(fig);
-    ax  = ancestor(obj, 'axes');  % [] if not over an axes
-
+    ax  = ancestor(obj, 'axes');
     if isempty(ax) || ~isscalar(ax)
         if isfield(S,'lbl_status') && ishandle(S.lbl_status)
             set(S.lbl_status,'String','Ready');
         end
         return;
     end
-
     [tf, k] = ismember(ax, S.ax(:));
     if ~tf || k<1 || k>numel(S.currentSlices) || S.currentSlices(k)==0
         if isfield(S,'lbl_status') && ishandle(S.lbl_status)
@@ -1057,32 +913,24 @@ function onMouseMove(fig,~)
         end
         return;
     end
-
     idx = S.currentSlices(k);
 
-    % Map cursor -> voxel index in display coords
     pt = get(ax,'CurrentPoint');
     xB = pt(1,1); yB = pt(1,2);
     xL = get(ax,'XLim'); yL = get(ax,'YLim');
     nx = S.X; ny = S.Ydim;
-
     jB = round(((xB-xL(1))/(xL(2)-xL(1)))*(nx-1)+1);
     iB = round(((yB-yL(1))/(yL(2)-yL(1)))*(ny-1)+1);
-
     if iB<1 || iB>ny || jB<1 || jB>nx
-        set(S.lbl_status,'String',sprintf('Z=%d (out of bounds)',idx));
-        return;
+        set(S.lbl_status,'String',sprintf('Z=%d (out of bounds)',idx)); return;
     end
 
-    % Convert back to original array indices (inverse of rot90(A,-1))
-    rA = S.X - jB + 1;  % row in original (X)
-    cA = iB;            % col in original (Y)
+    rA = S.X - jB + 1;   % row in original (X)
+    cA = iB;             % col in original (Y)
     if rA<1 || rA>S.X || cA<1 || cA>S.Ydim
-        set(S.lbl_status,'String','Ready');
-        return;
+        set(S.lbl_status,'String','Ready'); return;
     end
 
-    % Underlay value at cursor (current underlay source)
     switch get(S.pop_under,'Value')
         case 1, Uval = S.U_mean4D(rA,cA,idx);
         case 2, Uval = S.U_base(rA,cA,idx);
@@ -1091,14 +939,13 @@ function onMouseMove(fig,~)
             Uval = S.Y(rA,cA,idx,tp);
     end
 
-    % Overlay % change and alpha at cursor
     PCval = S.pc(rA,cA,idx);
     Acur  = compute_alpha(S, PCval, Uval, true);
     msk   = S.mask(rA,cA,idx);
 
     set(S.lbl_status,'String', ...
-        sprintf('[%d %d %d] U=%.3f %%Δ=%.3f α=%.2f mask=%d', ...
-        rA, cA, idx, Uval, PCval, Acur, msk));
+        sprintf('[%d %d %d]  U=%.3f  %%Δ=%.3f  α=%.2f  mask=%d', ...
+                rA, cA, idx, Uval, PCval, Acur, msk));
 end
 
 function Uslc = getSliceUnderlay(S, idx)
@@ -1113,24 +960,21 @@ end
 
 function onScroll(fig, evt)
     S = guidata(fig);
-    step = -evt.VerticalScrollCount;  % wheel up = +1
-    mods = get(fig,'CurrentModifier'); % {'control','alt','shift'}
-
+    step = -evt.VerticalScrollCount; % wheel up = +1
+    mods = get(fig,'CurrentModifier'); % cell array: 'control','alt','shift'
     if any(strcmp(mods,'control'))
-        % Scale (±0.5 per tick)
+        % Label scale only
         v = get(S.sld_scale,'Value') + 0.5*step;
         v = min(max(v,0.1), get(S.sld_scale,'Max'));
         set(S.sld_scale,'Value',v);
         adjustScale(S.sld_scale,[]);
     elseif any(strcmp(mods,'alt'))
-        % Timepoint (±1 or ±10 with shift)
         delta = step * (1 + 9*any(strcmp(mods,'shift')));
         v = round(get(S.sld_tp,'Value') + delta);
         v = min(max(v,1), get(S.sld_tp,'Max'));
         set(S.sld_tp,'Value',v);
         changeUnderlay(S.sld_tp,[]);
     else
-        % Page slices
         if step>0, nextPage(fig,[]); else, prevPage(fig,[]); end
     end
 end
@@ -1140,45 +984,60 @@ function onKeyPress(fig, evt)
     switch lower(evt.Key)
         case 'rightarrow', nextPage(fig,[]);
         case 'leftarrow',  prevPage(fig,[]);
-
         case 'uparrow'
-            v = get(S.sld_scale,'Value') + 0.5;
-            set(S.sld_scale,'Value',min(v,get(S.sld_scale,'Max'))); adjustScale(S.sld_scale,[]);
-
+            v = get(S.sld_scale,'Value') + 0.5; set(S.sld_scale,'Value',min(v,get(S.sld_scale,'Max'))); adjustScale(S.sld_scale,[]);
         case 'downarrow'
-            v = get(S.sld_scale,'Value') - 0.5;
-            set(S.sld_scale,'Value',max(v,0.1)); adjustScale(S.sld_scale,[]);
-
-        case 'o'
-            set(S.chk_overlay,'Value',~get(S.chk_overlay,'Value'));
-            changeOverlay(S.chk_overlay,[]);
-
-        case 'a'
-            set(S.chk_showA,'Value',~get(S.chk_showA,'Value'));
-            adjustScale(S.sld_scale,[]); renderPage(fig);
-
-        case 'p'
-            set(S.chk_psc,'Value',~get(S.chk_psc,'Value'));
-            refreshTSLabel(S.axTS); plotTSAtCenter(fig);
-
-        case 'add'
-            v = get(S.sld_scale,'Value') + 0.5;
-            set(S.sld_scale,'Value',min(v,get(S.sld_scale,'Max'))); adjustScale(S.sld_scale,[]);
-
-        case 'subtract'
-            v = get(S.sld_scale,'Value') - 0.5;
-            set(S.sld_scale,'Value',max(v,0.1)); adjustScale(S.sld_scale,[]);
-
+            v = get(S.sld_scale,'Value') - 0.5; set(S.sld_scale,'Value',max(v,0.1)); adjustScale(S.sld_scale,[]);
+        case 'o', set(S.chk_overlay,'Value',~get(S.chk_overlay,'Value')); changeOverlay(S.chk_overlay,[]);
+        case 'a', set(S.chk_showA,'Value',~get(S.chk_showA,'Value')); adjustScale(S.sld_scale,[]); renderPage(fig);
+        case 'p', set(S.chk_psc,'Value',~get(S.chk_psc,'Value')); refreshTSLabel(S.axTS); plotTSAtCenter(fig);
+        case 'add',   v = get(S.sld_scale,'Value') + 0.5; set(S.sld_scale,'Value',min(v,get(S.sld_scale,'Max'))); adjustScale(S.sld_scale,[]);
+        case 'subtract', v = get(S.sld_scale,'Value') - 0.5; set(S.sld_scale,'Value',max(v,0.1)); adjustScale(S.sld_scale,[]);
         case 'bracketleft'
             if strcmp(get(S.sld_roirZ,'Enable'),'on')
-                v = max(0, get(S.sld_roirZ,'Value')-1);
-                set(S.sld_roirZ,'Value',v); roiChanged(S.sld_roirZ,[]);
+                v = max(0, get(S.sld_roirZ,'Value')-1); set(S.sld_roirZ,'Value',v); roiChanged(S.sld_roirZ,[]);
             end
-
         case 'bracketright'
             if strcmp(get(S.sld_roirZ,'Enable'),'on')
-                v = min(get(S.sld_roirZ,'Max'), get(S.sld_roirZ,'Value')+1);
-                set(S.sld_roirZ,'Value',v); roiChanged(S.sld_roirZ,[]);
+                v = min(get(S.sld_roirZ,'Max'), get(S.sld_roirZ,'Value')+1); set(S.sld_roirZ,'Value',v); roiChanged(S.sld_roirZ,[]);
             end
     end
+end
+
+%% === Colorbar helper (RIGHT of tile grid, wider font/size) ===
+function placeColorbarRight(fig)
+    S = guidata(fig);
+
+    % Remove old colorbar safely
+    if isstruct(S)
+        if isfield(S,'cb')
+            if isgraphics(S.cb)
+                delete(S.cb);
+            end
+        end
+    end
+
+    % Try to parent to tiledlayout (newer MATLAB), fallback to first axes
+    try
+        S.cb = colorbar(S.tl,'eastoutside');
+    catch
+        S.cb = colorbar(S.ax(1),'eastoutside');
+        try
+            S.cb.Layout.Tile = 'east';
+        end
+    end
+
+    % Styling / enlargement
+    set(S.cb,'Units','normalized');
+    S.cb.FontSize  = 16;      % adjust font size here
+    S.cb.LineWidth = 1.2;
+    S.cb.Label.String = '% change';
+
+    drawnow;
+    pos = S.cb.Position;      % [x y w h] in normalized units
+    pos(1) = pos(1) + 0.01;   % nudge right a bit
+    pos(3) = pos(3) * 1.8;    % ~80% wider
+    set(S.cb,'Position',pos);
+
+    guidata(fig,S);
 end
