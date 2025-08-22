@@ -122,21 +122,39 @@ chk_psc = uicontrol('Parent',panelRight,'Style','checkbox','Units','pixels', ...
 lbl_bmode = uicontrol('Parent',panelRight,'Style','text','Units','pixels', ...
     'String','Baseline mode:', 'BackgroundColor','w','HorizontalAlignment','right','FontWeight','bold');
 
+% pop_bmode = uicontrol('Parent',panelRight,'Style','popupmenu','Units','pixels', ...
+%     'String',{'Global baseline_idx','Manual [b1 b2]'}, 'Callback',@(~,~)refreshTSLabel(axTS));
+% 
+% lbl_b1 = uicontrol('Parent',panelRight,'Style','text','Units','pixels', ...
+%     'String','b1:', 'BackgroundColor','w','HorizontalAlignment','right');
+
 pop_bmode = uicontrol('Parent',panelRight,'Style','popupmenu','Units','pixels', ...
-    'String',{'Global baseline_idx','Manual [b1 b2]'}, 'Callback',@(~,~)refreshTSLabel(axTS));
+    'String',{'Global baseline_idx','Manual [b1 b2]'}, 'Callback',@onBaselineCtrlChanged);
 
 lbl_b1 = uicontrol('Parent',panelRight,'Style','text','Units','pixels', ...
     'String','b1:', 'BackgroundColor','w','HorizontalAlignment','right');
+% 
+% edt_b1 = uicontrol('Parent',panelRight,'Style','edit','Units','pixels', ...
+%     'String',num2str(min(baseline_idx)), 'Callback',@(~,~)refreshTSLabel(axTS), ...
+%     'TooltipString','Baseline start (frame)');
 
 edt_b1 = uicontrol('Parent',panelRight,'Style','edit','Units','pixels', ...
-    'String',num2str(min(baseline_idx)), 'Callback',@(~,~)refreshTSLabel(axTS), ...
+    'String',num2str(min(baseline_idx)), 'Callback',@onBaselineCtrlChanged, ...
     'TooltipString','Baseline start (frame)');
 
 lbl_b2 = uicontrol('Parent',panelRight,'Style','text','Units','pixels', ...
     'String','b2:', 'BackgroundColor','w','HorizontalAlignment','right');
 
+
+lbl_b2 = uicontrol('Parent',panelRight,'Style','text','Units','pixels', ...
+    'String','b2:', 'BackgroundColor','w','HorizontalAlignment','right');
+% 
+% edt_b2 = uicontrol('Parent',panelRight,'Style','edit','Units','pixels', ...
+%     'String',num2str(max(baseline_idx)), 'Callback',@(~,~)refreshTSLabel(axTS), ...
+%     'TooltipString','Baseline end (frame)');
+
 edt_b2 = uicontrol('Parent',panelRight,'Style','edit','Units','pixels', ...
-    'String',num2str(max(baseline_idx)), 'Callback',@(~,~)refreshTSLabel(axTS), ...
+    'String',num2str(max(baseline_idx)), 'Callback',@onBaselineCtrlChanged, ...
     'TooltipString','Baseline end (frame)');
 
 lbl_bhint = uicontrol('Parent',panelRight,'Style','text','Units','pixels', ...
@@ -740,6 +758,54 @@ function onClickVoxel(h,~, zIdx)
     renderPage(fig);
     applyGlobalUIFont(S);
 end
+
+
+function onBaselineCtrlChanged(~,~)
+    % Refresh label text (PSC vs Signal) and replot the TS panel
+    fig = gcbf;
+    S = guidata(fig);
+    refreshTSLabel(S.axTS);
+    plotTSAtCenter(fig);
+
+    % Recompute the overlay mosaic to follow the current baseline choice
+    recomputeOverlayFromBaseline(fig);
+end
+
+function recomputeOverlayFromBaseline(fig)
+    S = guidata(fig);
+
+    % 1) Determine baseline indices from UI (Global vs Manual)
+    [b1,b2] = get_baseline_window(S);   % already handles pop_bmode + edits
+    b1 = max(1, round(b1)); b2 = min(S.T, round(b2));
+    if b2 <= b1, b2 = min(S.T, b1+1); end
+    base_idx = b1:b2;
+
+    % 2) Keep your existing signal window
+    sig_idx = S.signal_idx;
+    if isempty(sig_idx), sig_idx = max(1, round(S.T*0.55)) : min(S.T, round(S.T*0.75)); end
+
+    % 3) Recompute baseline/signal means and % change
+    baseline_mean = mean(S.Y(:,:,:,base_idx),4,'omitnan');
+    signal_mean   = mean(S.Y(:,:,:,sig_idx),4,'omitnan');
+
+    den = baseline_mean;
+    den(abs(den) < 1e-6) = 1e-6;   % protect against divide-by-zero
+    S.pc = ((signal_mean - baseline_mean) ./ den) * 100;
+
+    % 4) Update |pc| stats for alpha modulation modes that depend on |%|
+    S.pc_abs = abs(S.pc);
+    pc_abs_flat = S.pc_abs(isfinite(S.pc_abs)); if isempty(pc_abs_flat), pc_abs_flat = 0; end
+    S.pc_abs_lo = prctile(pc_abs_flat,2);
+    S.pc_abs_hi = prctile(pc_abs_flat,98);
+    if S.pc_abs_hi <= S.pc_abs_lo, S.pc_abs_hi = S.pc_abs_lo + eps; end
+
+    % 5) Redraw and keep the current scale limits coherent
+    guidata(fig,S);
+    renderPage(fig);                 % redraw tiles with new S.pc
+    adjustScale(S.sld_scale,[]);     % maintain ±scale on colorbar/axes
+    applyGlobalUIFont(S);
+end
+
 
 function plotTSAtCenter(fig)
     S = guidata(fig); if isempty(S.roi_center), return; end
