@@ -82,4 +82,4 @@ draw_case () {
 }
 
 # CASE 1: TR = 17s, 180 volumes → 51 minutes
-draw_case "CASE 1 (TR = 17s)" 51 1 20 10 1
+# draw_case "CASE 1 (TR = 17s)" 51 1 20 10 1
