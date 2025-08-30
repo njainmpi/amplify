@@ -3,7 +3,7 @@
 
 #07th November 2024: $$Naman Jain$$ This function is to extract parameters from the methods file
 
-FUNC_PARAM_EXTARCT () {
+FUNC_PARAM_EXTRACT () {
 
     Sequence="`grep -A1 'ACQ_protocol_name=( 64 )' $1/acqp | grep -v -e 'ACQ_protocol_name=( 64 )' -e '--'`"
     #here the grep command will read the no of slices from the Bruker raw file acquired during acquisiton
