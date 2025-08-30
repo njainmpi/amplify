@@ -8,23 +8,33 @@
 #01.04.2025: Intial Script Planned, all functions called through external script
 
 
-bash ../toolbox_name.sh
-source ../log_execution.sh
-source ../missing_run.sh
-source ../folder_existence_function.sh
-source ../func_parameters_extraction.sh
-source ../bias_field_correction.sh
-source ../check_spikes.sh
-source ../coregistration.sh
-source ../data_conversion.sh
-source ../motion_correction.sh
-source ../quality_check.sh
-source ../signal_change_map.sh
-source ../smoothing_using_fsl.sh
-source ../temporal_snr_using_afni.sh
-source ../temporal_snr_using_fsl.sh
-source ../scm_visual.sh
-source ../print_function.sh
+# --- GitHub sourcing helper ---
+gh_source() {
+    local file="$1"
+    local base_url="https://raw.githubusercontent.com/njainmpi/amplify/main"
+    source <(curl -s "$base_url/$file")
+}
+
+
+
+gh_source toolbox_name.sh
+gh_source log_execution.sh
+gh_source missing_run.sh
+gh_source folder_existence_function.sh
+gh_source func_parameters_extraction.sh
+gh_source bias_field_correction.sh
+gh_source check_spikes.sh
+gh_source coregistration.sh
+gh_source data_conversion.sh
+gh_source motion_correction.sh
+gh_source quality_check.sh
+gh_source signal_change_map.sh
+gh_source smoothing_using_fsl.sh
+gh_source temporal_snr_using_afni.sh
+gh_source temporal_snr_using_fsl.sh
+gh_source scm_visual.sh
+gh_source print_function.sh
+
 
 currentpath="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
