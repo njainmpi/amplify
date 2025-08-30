@@ -1,3 +1,4 @@
+%% 
 function plot_groups_psc
 % plot_groups_psc.m
 % Layout: 2x2 subplots
@@ -11,7 +12,7 @@ function plot_groups_psc
 %   - Between groups (post only): Welch t-test comparing fap-aav_fap vs each other group.
 
     % ---- USER STYLE SETTINGS ----
-    PSC_YLIM     = [-2 5];    % y-limits for PSC plots (subplots 1–3) and subplot 4
+    PSC_YLIM     = [-2 20];    % y-limits for PSC plots (subplots 1–3) and subplot 4
     AX_FONTSIZE  = 16;        % axis labels, tick labels, titles
     LEG_FONTSIZE = 12;        % legend text (used in subplots 1–3)
 
