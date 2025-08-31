@@ -267,21 +267,28 @@ PY
 
     run_if_missing "G1_cp.nii.gz" -- BRUKER_to_NIFTI "$datapath" "$run_number" "$datapath/$run_number/method"
 
-    # ---------------- MOTION ----------------
+    # ---------------- Motion Corretion (Using AFNI)----------------
     : "${MiddleVolume:?FUNC_PARAM_EXTRACT (or motion helper) did not set MiddleVolume}"
     PRINT_YELLOW "Performing Step 1: Motion Correction"
     run_if_missing "mc_func.nii.gz" "mc_func+orig.HEAD" "mc_func+orig.BRIK" -- \
       MOTION_CORRECTION "$MiddleVolume" G1_cp.nii.gz mc_func
 
-    # ---------------- tSNR (AFNI) -------------
+    # ---------------- tSNR Estimation(Using AFNI) -------------
     PRINT_YELLOW "Performing Step 2: Obtaining Mean func, Std func and tSNR Maps"
     run_if_missing "tSNR_mc_func.nii.gz" "tSNR_mc_func+orig.HEAD" "tSNR_mc_func+orig.BRIK" -- \
       TEMPORAL_SNR_using_AFNI mc_func+orig
 
-    # ---------------- N4 Bias ------------------
+    # ---------------- N4 Bias Field Correction ------------------
     PRINT_YELLOW "Performing Step 3: Performing N4 Bias Field Correction of mean_mc_func"
     run_if_missing "cleaned_mc_func.nii.gz" -- \
       BIAS_CORRECTED_IMAGE mean_mc_func.nii.gz 100 mc_func.nii.gz
+
+    # # ---------------- Performing Coregistration (Using AFNI) ------------------
+    # PRINT_YELLOW "Performing Step 4: Performing Coregsitration of functional to structural image"
+    # run_if_missing "cleaned_mc_func.nii.gz" -- \
+    #   3dAllineate -base cleaned_anatomy.nii.gz -input cleaned_mc_func.nii.gz -1Dmatrix_save func2struct_mat.aff12.1D -cost lpa -prefix func_4D_aligned.nii.gz -1Dparam_save params.1D
+
+
 
     # ---------------- Means --------------------
     if [[ -f mean_image_min_1_to_10.nii.gz ]]; then
