@@ -57,6 +57,7 @@ gh_source temporal_snr_using_afni.sh
 gh_source temporal_snr_using_fsl.sh
 gh_source scm_visual.sh
 gh_source print_function.sh
+gh_source static_map.sh
 
 # --- Color print fallbacks (if helper didn't provide them) ---
 if ! declare -F PRINT_CYAN >/dev/null;   then PRINT_CYAN()   { printf "\033[36m%s\033[0m\n" "$*"; }; fi
@@ -267,6 +268,9 @@ PY
 
     run_if_missing "G1_cp.nii.gz" -- BRUKER_to_NIFTI "$datapath" "$run_number" "$datapath/$run_number/method"
 
+
+    # brkraw tonii "$path_to_dataset/20250401_121203_RGRO_250401_0224_RN_SD_017_0224_1_1" --scan 13 --reco 2
+
     # ---------------- Motion Corretion (Using AFNI)----------------
     : "${MiddleVolume:?FUNC_PARAM_EXTRACT (or motion helper) did not set MiddleVolume}"
     PRINT_YELLOW "Performing Step 1: Motion Correction"
@@ -282,6 +286,21 @@ PY
     PRINT_YELLOW "Performing Step 3: Performing N4 Bias Field Correction of mean_mc_func"
     run_if_missing "cleaned_mc_func.nii.gz" -- \
       BIAS_CORRECTED_IMAGE mean_mc_func.nii.gz 100 mc_func.nii.gz
+
+
+    # ---------------- Static Map (Generation) ------------------
+    PRINT_YELLOW "Performing Step 4: Generating Static Map"
+    fsleyes cleaned_mc_func.nii.gz \
+    # Ask user for inputs
+    read -p "Enter baseline start index: " base_start
+    read -p "Enter baseline end index: " base_end
+    read -p "Enter signal start index: " sig_start
+    read -p "Enter signal end index: " sig_end
+
+    # Now run fsleyes with user-provided values
+
+    Static_Map cleaned_mc_func.nii.gz "$base_start" "$base_end" "$sig_start" "$sig_end"
+    
 
     # # ---------------- Performing Coregistration (Using AFNI) ------------------
     # PRINT_YELLOW "Performing Step 4: Performing Coregsitration of functional to structural image"
