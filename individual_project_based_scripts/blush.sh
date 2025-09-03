@@ -130,6 +130,18 @@ do
         run_if_missing "anatomy.nii.gz" -- BRUKER_to_NIFTI "$datapath" "$structural_run" "$datapath/$structural_run/method"
         cp G1_cp.nii.gz anatomy.nii.gz
     
+
+
+        #conversion for structural data for coregistration
+        FUNC_PARAM_EXTARCT $datapath/$str_for_coreg
+               
+        CHECK_FILE_EXISTENCE "$Path_Analysed_Data/$str_for_coreg""$SequenceName"
+        cd $Path_Analysed_Data/$str_for_coreg''$SequenceName
+
+        run_if_missing "anatomy.nii.gz" -- BRUKER_to_NIFTI "$datapath" "$str_for_coreg" "$datapath/$str_for_coreg/method"
+        cp G1_cp.nii.gz anatomy.nii.gz
+
+
         #conversion for functional data
         FUNC_PARAM_EXTARCT $datapath/$run_number
         CHECK_FILE_EXISTENCE "$Path_Analysed_Data/$run_number$SequenceName"

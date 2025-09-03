@@ -255,6 +255,25 @@ PY
     run_if_missing "anatomy.nii.gz" -- BRUKER_to_NIFTI "$datapath" "$structural_run" "$datapath/$structural_run/method"
     cp -f G1_cp.nii.gz anatomy.nii.gz || echo "WARNING: G1_cp.nii.gz not found for structural; continuing."
 
+
+
+    # ---------------- STRUCTURAL FOR COREGISTRATION ----------------
+
+
+
+    FUNC_PARAM_EXTRACT "$datapath/$str_for_coreg"
+    : "${SequenceName:?FUNC_PARAM_EXTRACT did not set SequenceName}"
+    echo "DEBUG: SequenceName='$SequenceName' (structural)"
+
+    local struct_dir="$Path_Analysed_Data/${str_for_coreg}${SequenceName}"
+    mkdir -p "$struct_dir"
+    cd "$struct_dir"
+    CHECK_FILE_EXISTENCE "$struct_dir" || true
+
+    run_if_missing "anatomy.nii.gz" -- BRUKER_to_NIFTI "$datapath" "$str_for_coreg" "$datapath/$str_for_coreg/method"
+    cp -f G1_cp.nii.gz anatomy.nii.gz || echo "WARNING: G1_cp.nii.gz not found for structural; continuing."
+
+
     # ---------------- FUNCTIONAL ----------------
     FUNC_PARAM_EXTRACT "$datapath/$run_number"
     : "${SequenceName:?FUNC_PARAM_EXTRACT did not set SequenceName}"
@@ -287,29 +306,34 @@ PY
       BIAS_CORRECTED_IMAGE mean_mc_func.nii.gz 100 mc_func.nii.gz
 
 
+
     # ---------------- Static Map (Generation) ------------------
+
     PRINT_YELLOW "Performing Step 4: Generating Static Map"
-    fsleyes cleaned_mc_func.nii.gz \
-    # Ask user for inputs
-    read -p "Enter baseline start index: " base_start
-    read -p "Enter baseline end index: " base_end
-    read -p "Enter signal start index: " sig_start
-    read -p "Enter signal end index: " sig_end
-
-    # Now run fsleyes with user-provided values
-
-    run_if_missing "Static_SCM*.nii.gz" -- \
-      Static_Map cleaned_mc_func.nii.gz "$base_start" "$base_end" "$sig_start" "$sig_end"
+    Map_file=$(echo Static_SCM*.nii.gz)
+    echo "Map file is $Map_file"
     
+    
+    if [[ ! -f "$Map_file" ]]; then
+      echo "ERROR: Static_SCM*.nii.gz file not found. Ensure that the SCM generation step has been completed successfully."
+      fsleyes cleaned_mc_func.nii.gz \
+      # Ask user for inputs
+      read -p "Enter baseline start index: " base_start
+      read -p "Enter baseline end index: " base_end
+      read -p "Enter signal start index: " sig_start
+      read -p "Enter signal end index: " sig_end
 
-    # # ---------------- Performing Coregistration (Using AFNI) ------------------
+      # Now run fsleyes with user-provided values
+      Static_Map cleaned_mc_func.nii.gz "$base_start" "$base_end" "$sig_start" "$sig_end"
+    else
+      echo "Static Map file already exists. Skipping Static Map generation."
+    fi
+     
+        # # ---------------- Performing Coregistration (Using AFNI) ------------------
     # PRINT_YELLOW "Performing Step 4: Performing Coregsitration of functional to structural image"
-    # run_if_missing "cleaned_mc_func.nii.gz" -- \
-    #   3dAllineate -base cleaned_anatomy.nii.gz -input cleaned_mc_func.nii.gz -1Dmatrix_save func2struct_mat.aff12.1D -cost lpa -prefix func_4D_aligned.nii.gz -1Dparam_save params.1D
-
-
+    
     3dAllineate -base ../${str_for_coreg}*/anatomy.nii.gz -input mean_mc_func.nii.gz -1Dmatrix_save mean_func_struct_aligned.aff12.1D -cost lpa -prefix mean_func_struct_aligned.nii.gz -1Dparam_save params.1D -twopass
-    3dAllineate -base ../${str_for_coreg}*/anatomy.nii.gz -input Static_SCM*.nii.gz -1Dmatrix_apply mean_func_struct_aligned.aff12.1D -master ../${str_for_coreg}*/anatomy.nii.gz -final wsinc5 -prefix Static_Map_coreg.nii.gz
+    3dAllineate -base ../${str_for_coreg}*/anatomy.nii.gz -input Static_SCM*.nii.gz -1Dmatrix_apply mean_func_struct_aligned.aff12.1D -master ../${str_for_coreg}*/anatomy.nii.gz -final linear -prefix Static_Map_coreg.nii.gz
 
 
 
