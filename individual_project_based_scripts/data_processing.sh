@@ -224,7 +224,6 @@ PY
     echo "str_for_coreg (col7):      $str_for_coreg"
     echo "baseline (min) (col13):    $baseline_duration_in_min"
     echo "injection (min) (col14):   $injection_duration_in_min"
-    echo
 
     local Path_Raw_Data="$root_location/RawData/$project_name/$sub_project_name"
     local Path_Analysed_Data="$root_location/AnalysedData/$project_name/$sub_project_name/$Dataset_Name"
@@ -308,17 +307,11 @@ PY
     #   3dAllineate -base cleaned_anatomy.nii.gz -input cleaned_mc_func.nii.gz -1Dmatrix_save func2struct_mat.aff12.1D -cost lpa -prefix func_4D_aligned.nii.gz -1Dparam_save params.1D
 
 
+    3dAllineate -base ../${str_for_coreg}*/anatomy.nii.gz -input mean_mc_func.nii.gz -1Dmatrix_save mean_func_struct_aligned.aff12.1D -cost lpa -prefix mean_func_struct_aligned.nii.gz -1Dparam_save params.1D -twopass
+    3dAllineate -base ../${str_for_coreg}*/anatomy.nii.gz -input Static_SCM_1300_to_1500.nii.gz -1Dmatrix_apply mean_func_struct_aligned.aff12.1D -master ../${str_for_coreg}*/anatomy.nii.gz -final wsinc5 -prefix Static_Map_coreg.nii.gz
 
-    # ---------------- Means --------------------
-    if [[ -f mean_image_min_1_to_10.nii.gz ]]; then
-      echo "Mean files exist. Skipping 3dTstat blocks."
-    else
-      echo "Computing mean images for 0–40 min windows (10-min bins)."
-      3dTstat -mean -prefix mean_image_min_1_to_10.nii.gz  cleaned_mc_func.nii.gz"[0..599]"
-      3dTstat -mean -prefix mean_image_min_11_to_20.nii.gz cleaned_mc_func.nii.gz"[600..1199]"
-      3dTstat -mean -prefix mean_image_min_21_to_30.nii.gz cleaned_mc_func.nii.gz"[1200..1799]"
-      3dTstat -mean -prefix mean_image_min_31_to_40.nii.gz cleaned_mc_func.nii.gz"[1800..2399]"
-    fi
+
+
 
     echo "✔ Completed pipeline for CSV line $line_no."
   )
