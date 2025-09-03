@@ -298,7 +298,8 @@ PY
 
     # Now run fsleyes with user-provided values
 
-    Static_Map cleaned_mc_func.nii.gz "$base_start" "$base_end" "$sig_start" "$sig_end"
+    run_if_missing "Static_SCM*.nii.gz" -- \
+      Static_Map cleaned_mc_func.nii.gz "$base_start" "$base_end" "$sig_start" "$sig_end"
     
 
     # # ---------------- Performing Coregistration (Using AFNI) ------------------
@@ -308,7 +309,7 @@ PY
 
 
     3dAllineate -base ../${str_for_coreg}*/anatomy.nii.gz -input mean_mc_func.nii.gz -1Dmatrix_save mean_func_struct_aligned.aff12.1D -cost lpa -prefix mean_func_struct_aligned.nii.gz -1Dparam_save params.1D -twopass
-    3dAllineate -base ../${str_for_coreg}*/anatomy.nii.gz -input Static_SCM_1300_to_1500.nii.gz -1Dmatrix_apply mean_func_struct_aligned.aff12.1D -master ../${str_for_coreg}*/anatomy.nii.gz -final wsinc5 -prefix Static_Map_coreg.nii.gz
+    3dAllineate -base ../${str_for_coreg}*/anatomy.nii.gz -input Static_SCM*.nii.gz -1Dmatrix_apply mean_func_struct_aligned.aff12.1D -master ../${str_for_coreg}*/anatomy.nii.gz -final wsinc5 -prefix Static_Map_coreg.nii.gz
 
 
 
@@ -324,3 +325,5 @@ done
 
 echo
 echo "All requested CSV lines processed."
+
+
