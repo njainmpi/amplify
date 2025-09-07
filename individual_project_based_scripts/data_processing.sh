@@ -202,8 +202,10 @@ PY
     structural_name=$(trim "$(get_n_field 5)")
     functional_name=$(trim "$(get_n_field 6)")
     struc_coregistration=$(trim "$(get_n_field 7)")
-    baseline_duration=$(trim "$(get_n_field 13)")
-    injection_duration=$(trim "$(get_n_field 14)")
+    baseline_duration=$(trim "$(get_n_field 8)")
+    injection_duration=$(trim "$(get_n_field 9)")
+    injection_on_left_side=$(trim "$(get_n_field 22)")
+    injection_on_left_side=$(trim "$(get_n_field 23)")
 
     export Project_Name="$project_name"
     export Sub_project_Name="$sub_project_name"
@@ -213,17 +215,21 @@ PY
     export str_for_coreg="$struc_coregistration"
     export baseline_duration_in_min="$baseline_duration"
     export injection_duration_in_min="$injection_duration"
+    export injected_liquid_on_left_side="$injection_on_left_side"
+    export injected_liquid_on_right_side="$injection_on_left_side"
 
     echo -e "\n== Selection summary =="
-    echo "CSV line:                  $line_no"
-    echo "Project_Name (col3):       $Project_Name"
-    echo "Sub_project_Name (col4):   $Sub_project_Name"
-    echo "Dataset_Name (col2):       $Dataset_Name"
-    echo "structural_run (col5):     $structural_run"
-    echo "run_number (col6):         $run_number"
-    echo "str_for_coreg (col7):      $str_for_coreg"
-    echo "baseline (min) (col13):    $baseline_duration_in_min"
-    echo "injection (min) (col14):   $injection_duration_in_min"
+    echo "CSV line:                                 $line_no"
+    echo "Project_Name:                             $Project_Name"
+    echo "Sub_project_Name:                         $Sub_project_Name"
+    echo "Dataset_Name:                             $Dataset_Name"
+    echo "First Structural Run:                     $structural_run"
+    echo "Functional Run Number:                    $run_number"
+    echo "Structural Data used for Coregistration:  $str_for_coreg"
+    echo "Baseline Duration (in min):               $baseline_duration_in_min"
+    echo "Injection Duration (in min):              $injection_duration_in_min"
+    echo "Liquid injected on Left Side:             $injected_liquid_on_left_side"
+    echo "Liquid injected on Right Side:            $injected_liquid_on_right_side"
 
     local Path_Raw_Data="$root_location/RawData/$project_name/$sub_project_name"
     local Path_Analysed_Data="$root_location/AnalysedData/$project_name/$sub_project_name/$Dataset_Name"
@@ -245,7 +251,6 @@ PY
     # ---------------- STRUCTURAL ----------------
     FUNC_PARAM_EXTRACT "$datapath/$structural_run"
     : "${SequenceName:?FUNC_PARAM_EXTRACT did not set SequenceName}"
-    echo "DEBUG: SequenceName='$SequenceName' (structural)"
 
     local struct_dir="$Path_Analysed_Data/${structural_run}${SequenceName}"
     mkdir -p "$struct_dir"
@@ -263,7 +268,6 @@ PY
 
     FUNC_PARAM_EXTRACT "$datapath/$str_for_coreg"
     : "${SequenceName:?FUNC_PARAM_EXTRACT did not set SequenceName}"
-    echo "DEBUG: SequenceName='$SequenceName' (structural)"
 
     local struct_dir="$Path_Analysed_Data/${str_for_coreg}${SequenceName}"
     mkdir -p "$struct_dir"
@@ -277,7 +281,6 @@ PY
     # ---------------- FUNCTIONAL ----------------
     FUNC_PARAM_EXTRACT "$datapath/$run_number"
     : "${SequenceName:?FUNC_PARAM_EXTRACT did not set SequenceName}"
-    echo "DEBUG: SequenceName='$SequenceName' (functional)"
 
     local func_dir="$Path_Analysed_Data/${run_number}${SequenceName}"
     mkdir -p "$func_dir"
