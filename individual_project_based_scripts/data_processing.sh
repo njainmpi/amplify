@@ -12,8 +12,33 @@ fi
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "ERROR: '$1' not found in PATH." >&2; exit 127; }; }
 need curl; need awk; need python3; command -v column >/dev/null 2>&1 || true
+need mktemp
 
-# --- Robust GitHub sourcing helper ---
+# Nice glob behaviour for optional files like Static_SCM*.nii.gz
+shopt -s nullglob
+
+# --- Expand user paths like ~, $HOME, relative → absolute (safe; no eval) ---
+expand_path() {
+  python3 - "$1" <<'PY_EXPAND'
+import os, sys
+p = sys.argv[1] if len(sys.argv)>1 else ''
+print(os.path.abspath(os.path.expanduser(os.path.expandvars(p or '.'))))
+PY_EXPAND
+}
+
+# --- Portable readline prompt with default (works on macOS Bash 3.2) ---
+# Usage: read_default "Prompt text" "DEFAULT" varname
+read_default() {
+  local _prompt="$1" _default="$2" _outvar="$3"
+  if help read 2>/dev/null | grep -q ' -i '; then
+    read -e -r -p "${_prompt} [${_default}]: " -i "${_default}" REPLY || true
+  else
+    read -e -r -p "${_prompt} [${_default}]: " REPLY || true
+  fi
+  printf -v "${_outvar}" '%s' "${REPLY:-${_default}}"
+}
+
+# --- Robust GitHub sourcing helper (Bash files only) ---
 gh_source() {
   local fname="$1"
   local repo_base="https://raw.githubusercontent.com/njainmpi/amplify/main"
@@ -39,6 +64,44 @@ gh_source() {
   exit 2
 }
 
+# --- Run a Python file from local or GitHub ---
+# Usage: gh_py_exec make_static_maps_and_movie.py --args...
+gh_py_exec() {
+  local fname="$1"; shift || true
+  local local_py="./$fname"
+  if [[ -f "$local_py" ]]; then
+    echo "Running local Python: $local_py $*"
+    python3 "$local_py" "$@"
+    return $?
+  fi
+
+  local repo_base="https://raw.githubusercontent.com/njainmpi/amplify/main"
+  local try_paths=(
+    "$fname"
+    "individual_project_based_scripts/$fname"
+    "toolbox/$fname"
+    "scripts/$fname"
+  )
+
+  local url tmp status
+  tmp="$(mktemp)"; mv "$tmp" "${tmp}.py"; tmp="${tmp}.py"
+
+  for p in "${try_paths[@]}"; do
+    url="$repo_base/$p"
+    status="$(curl -sS -L -w '%{http_code}' -o "$tmp" "$url" || echo 000)"
+    if [[ "$status" == "200" && -s "$tmp" ]]; then
+      echo "Running Python from GitHub: $p $*"
+      python3 "$tmp" "$@"; local rc=$?
+      rm -f "$tmp"
+      return "$rc"
+    fi
+  done
+
+  rm -f "$tmp"
+  echo "ERROR: Could not fetch Python '$fname' from known paths." >&2
+  return 2
+}
+
 # --- Source all helpers (your list) ---
 gh_source toolbox_name.sh
 gh_source log_execution.sh
@@ -58,20 +121,18 @@ gh_source temporal_snr_using_fsl.sh
 gh_source scm_visual.sh
 gh_source print_function.sh
 gh_source static_map.sh
+# Python is executed via gh_py_exec (not sourced)
 
 # --- Color print fallbacks (if helper didn't provide them) ---
-if ! declare -F PRINT_CYAN >/dev/null;   then PRINT_CYAN()   { printf "\033[36m%s\033[0m\n" "$*"; }; fi
+if ! declare -F PRINT_CYAN   >/dev/null; then PRINT_CYAN()   { printf "\033[36m%s\033[0m\n" "$*"; }; fi
 if ! declare -F PRINT_YELLOW >/dev/null; then PRINT_YELLOW() { printf "\033[33m%s\033[0m\n" "$*"; }; fi
-if ! declare -F PRINT_RED >/dev/null;    then PRINT_RED()    { printf "\033[31m%s\033[0m\n" "$*"; }; fi
+if ! declare -F PRINT_RED    >/dev/null; then PRINT_RED()    { printf "\033[31m%s\033[0m\n" "$*"; }; fi
 
 # --- resolve script dir for local files like path_definition.txt ---
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 identity="$(whoami)@$(hostname)"
 
 default_root="/Volumes/Extreme_Pro/fMRI"
-if [[ -n "${matched_path:-}" && -d "$matched_path" ]]; then
-  default_root="$matched_path"
-fi
 
 # ---- prompt/CLI for root_location ----
 root_location="${1:-}"
@@ -80,11 +141,16 @@ if [[ "${root_location:-}" == "--root" ]]; then
   root_location="${1:-}"
   shift || true
 fi
+
 if [[ -z "${root_location:-}" ]]; then
   echo
-  read -rp "Root location [${default_root}]: " root_location_input
-  root_location="${root_location_input:-$default_root}"
+  read_default "Root location" "${default_root}" root_location_input
+  root_location="${root_location_input}"
 fi
+
+# Expand ~, $VARS, and relative paths → absolute
+root_location="$(expand_path "$root_location")"
+
 if [[ ! -d "$root_location" ]]; then
   echo "ERROR: root location '$root_location' does not exist." >&2
   exit 1
@@ -104,7 +170,7 @@ fi
 
 # ---- show available rows (first 8 columns) ----
 echo -e "\n== Available rows (CSV line | first 8 columns) =="
-python3 - "$csv_path" "$header_lines" <<'PY' | { column -t -s'|' || cat; }
+python3 - "$csv_path" "$header_lines" <<'PY_AVAIL' | { column -t -s'|' || cat; }
 import csv, sys
 path = sys.argv[1]; skip_n = int(sys.argv[2])
 def try_decode(b):
@@ -122,7 +188,7 @@ with open(path,'rb') as f:
         row = [clean(c) for c in row]
         first8 = (row + [""]*8)[:8]
         print("|".join([str(lineno)] + first8))
-PY
+PY_AVAIL
 
 # ---- ask for multiple line numbers / ranges ----
 echo
@@ -161,17 +227,33 @@ else
 fi
 ((${#LINES[@]})) || { echo "No valid data lines selected (remember header lines are 1..$header_lines)."; exit 1; }
 
+# ---- helpers ----
+is_int() { [[ "$1" =~ ^-?[0-9]+$ ]]; }
+prompt_if_unset() {
+  local __var="$1"; shift
+  local __prompt="$1"; shift || true
+  local __def="${1:-}"
+  if [[ -z "${!__var:-}" ]]; then
+    if [[ -n "$__def" ]]; then
+      read -rp "$__prompt [$__def]: " __ans
+      printf -v "$__var" "%s" "${__ans:-$__def}"
+    else
+      read -rp "$__prompt: " __ans
+      printf -v "$__var" "%s" "$__ans"
+    fi
+  fi
+}
+
 # ---- function: process one CSV line number (SANDBOXED in subshell) ----
 process_csv_line() {
   local line_no="$1"
 
   (
-    # everything below happens in a subshell -> directory changes don't leak
     PRINT_CYAN "=== Processing CSV line $line_no ==="
 
     local parsed
-    parsed="$(
-    python3 - "$csv_path" "$line_no" <<'PY'
+parsed="$(
+python3 - "$csv_path" "$line_no" <<'PY_PARSE'
 import csv, sys
 US = '\x1f'; path = sys.argv[1]; target = int(sys.argv[2])
 def try_decode(b):
@@ -188,11 +270,12 @@ with open(path,'rb') as f:
             row = next(csv.reader([txt]))
             row = [(c or '').replace(US, ' ') for c in row]
             sys.stdout.write(US.join(row)); break
-PY
-    )"
+PY_PARSE
+)"
     [[ -n "$parsed" ]] || { echo "Selected line $line_no is blank. Skipping."; exit 0; }
 
     local project_name sub_project_name dataset_name structural_name functional_name struc_coregistration baseline_duration injection_duration
+    local injection_on_left_side injection_on_right_side
     get_n_field(){ echo "$parsed" | cut -d"$DELIM" -f"$1"; }
     trim(){ printf '%s' "$1" | xargs; }
 
@@ -205,7 +288,7 @@ PY
     baseline_duration=$(trim "$(get_n_field 8)")
     injection_duration=$(trim "$(get_n_field 9)")
     injection_on_left_side=$(trim "$(get_n_field 22)")
-    injection_on_left_side=$(trim "$(get_n_field 23)")
+    injection_on_right_side=$(trim "$(get_n_field 23)")
 
     export Project_Name="$project_name"
     export Sub_project_Name="$sub_project_name"
@@ -216,7 +299,7 @@ PY
     export baseline_duration_in_min="$baseline_duration"
     export injection_duration_in_min="$injection_duration"
     export injected_liquid_on_left_side="$injection_on_left_side"
-    export injected_liquid_on_right_side="$injection_on_left_side"
+    export injected_liquid_on_right_side="$injection_on_right_side"
 
     echo -e "\n== Selection summary =="
     echo "CSV line:                                 $line_no"
@@ -260,23 +343,17 @@ PY
     run_if_missing "anatomy.nii.gz" -- BRUKER_to_NIFTI "$datapath" "$structural_run" "$datapath/$structural_run/method"
     cp -f G1_cp.nii.gz anatomy.nii.gz || echo "WARNING: G1_cp.nii.gz not found for structural; continuing."
 
-
-
     # ---------------- STRUCTURAL FOR COREGISTRATION ----------------
-
-
-
     FUNC_PARAM_EXTRACT "$datapath/$str_for_coreg"
     : "${SequenceName:?FUNC_PARAM_EXTRACT did not set SequenceName}"
 
-    local struct_dir="$Path_Analysed_Data/${str_for_coreg}${SequenceName}"
-    mkdir -p "$struct_dir"
-    cd "$struct_dir"
-    CHECK_FILE_EXISTENCE "$struct_dir" || true
+    local struct_coreg_dir="$Path_Analysed_Data/${str_for_coreg}${SequenceName}"
+    mkdir -p "$struct_coreg_dir"
+    cd "$struct_coreg_dir"
+    CHECK_FILE_EXISTENCE "$struct_coreg_dir" || true
 
     run_if_missing "anatomy.nii.gz" -- BRUKER_to_NIFTI "$datapath" "$str_for_coreg" "$datapath/$str_for_coreg/method"
-    cp -f G1_cp.nii.gz anatomy.nii.gz || echo "WARNING: G1_cp.nii.gz not found for structural; continuing."
-
+    cp -f G1_cp.nii.gz anatomy.nii.gz || echo "WARNING: G1_cp.nii.gz not found for coreg structural; continuing."
 
     # ---------------- FUNCTIONAL ----------------
     FUNC_PARAM_EXTRACT "$datapath/$run_number"
@@ -289,57 +366,96 @@ PY
 
     run_if_missing "G1_cp.nii.gz" -- BRUKER_to_NIFTI "$datapath" "$run_number" "$datapath/$run_number/method"
 
-
-    # brkraw tonii "$path_to_dataset/20250401_121203_RGRO_250401_0224_RN_SD_017_0224_1_1" --scan 13 --reco 2
-
-    # ---------------- Motion Corretion (Using AFNI)----------------
+    # ---------------- Motion Correction (Using AFNI) ----------------
     : "${MiddleVolume:?FUNC_PARAM_EXTRACT (or motion helper) did not set MiddleVolume}"
     PRINT_YELLOW "Performing Step 1: Motion Correction"
     run_if_missing "mc_func.nii.gz" "mc_func+orig.HEAD" "mc_func+orig.BRIK" -- \
       MOTION_CORRECTION "$MiddleVolume" G1_cp.nii.gz mc_func
 
-    # ---------------- tSNR Estimation(Using AFNI) -------------
+    # ---------------- tSNR Estimation (Using AFNI) -----------------
     PRINT_YELLOW "Performing Step 2: Obtaining Mean func, Std func and tSNR Maps"
     run_if_missing "tSNR_mc_func.nii.gz" "tSNR_mc_func+orig.HEAD" "tSNR_mc_func+orig.BRIK" -- \
       TEMPORAL_SNR_using_AFNI mc_func+orig
 
-    # ---------------- N4 Bias Field Correction ------------------
+    # ---------------- N4 Bias Field Correction ---------------------
     PRINT_YELLOW "Performing Step 3: Performing N4 Bias Field Correction of mean_mc_func"
     run_if_missing "cleaned_mc_func.nii.gz" -- \
       BIAS_CORRECTED_IMAGE mean_mc_func.nii.gz 100 mc_func.nii.gz
 
-
-
-    # ---------------- Static Map (Generation) ------------------
-
-    PRINT_YELLOW "Performing Step 4: Generating Static Map"
-    Map_file=$(echo Static_SCM*.nii.gz)
-    echo "Map file is $Map_file"
-    
-    
-    if [[ ! -f "$Map_file" ]]; then
-      echo "ERROR: Static_SCM*.nii.gz file not found. Ensure that the SCM generation step has been completed successfully."
-      fsleyes cleaned_mc_func.nii.gz \
-      # Ask user for inputs
-      read -p "Enter baseline start index: " base_start
-      read -p "Enter baseline end index: " base_end
-      read -p "Enter signal start index: " sig_start
-      read -p "Enter signal end index: " sig_end
-
-      # Now run fsleyes with user-provided values
-      Static_Map cleaned_mc_func.nii.gz "$base_start" "$base_end" "$sig_start" "$sig_end"
+    # ---------------- Static Map (Generation) ----------------------
+    PRINT_YELLOW "Performing Step 4: Generating Static Map (SCM)"
+    local map_candidates=(Static_SCM*.nii.gz)
+    local map_file=""
+    if ((${#map_candidates[@]})); then
+      map_file="${map_candidates[0]}"
+      echo "Static Map already exists: $map_file"
     else
-      echo "Static Map file already exists. Skipping Static Map generation."
+      echo "No Static_SCM*.nii.gz found. Generating now..."
+      local base_start base_end sig_start sig_end
+      prompt_if_unset base_start "Enter baseline start index" "100"
+      prompt_if_unset base_end   "Enter baseline end index"   "300"
+      prompt_if_unset sig_start  "Enter signal start index"    "301"
+      prompt_if_unset sig_end    "Enter signal end index"      "500"
+      for v in base_start base_end sig_start sig_end; do
+        is_int "${!v}" || { echo "ERROR: $v must be an integer (got '${!v}')"; exit 1; }
+      done
+      Static_Map cleaned_mc_func.nii.gz "$base_start" "$base_end" "$sig_start" "$sig_end"
+      map_candidates=(Static_SCM*.nii.gz)
+      if ((${#map_candidates[@]})); then
+        map_file="${map_candidates[0]}"
+        echo "Generated Static Map: $map_file"
+      else
+        echo "WARNING: Static Map generation did not produce Static_SCM*.nii.gz"
+      fi
     fi
-     
-        # # ---------------- Performing Coregistration (Using AFNI) ------------------
-    # PRINT_YELLOW "Performing Step 4: Performing Coregsitration of functional to structural image"
-    
-    3dAllineate -base ../${str_for_coreg}*/anatomy.nii.gz -input mean_mc_func.nii.gz -1Dmatrix_save mean_func_struct_aligned.aff12.1D -cost lpa -prefix mean_func_struct_aligned.nii.gz -1Dparam_save params.1D -twopass
-    3dAllineate -base ../${str_for_coreg}*/anatomy.nii.gz -input Static_SCM*.nii.gz -1Dmatrix_apply mean_func_struct_aligned.aff12.1D -master ../${str_for_coreg}*/anatomy.nii.gz -final linear -prefix Static_Map_coreg.nii.gz
 
+    # # Ensure baseline start/end for the movie too
+    # if [[ -z "${base_start:-}" || -z "${base_end:-}" ]]; then
+    #   prompt_if_unset base_start "Enter baseline start index (for movie)" "100"
+    #   prompt_if_unset base_end   "Enter baseline end index (for movie)"   "300"
+    #   for v in base_start base_end; do
+    #     is_int "${!v}" || { echo "ERROR: $v must be an integer (got '${!v}')"; exit 1; }
+    #   done
+    # fi
 
+    # ---------------- Coregistration (Using AFNI) ------------------
+    PRINT_YELLOW "Performing Step 5: Coregistration of functional/static map to structural"
+    local base_anat="$struct_coreg_dir/anatomy.nii.gz"
 
+    3dAllineate \
+      -base "$base_anat" \
+      -input mean_mc_func.nii.gz \
+      -1Dmatrix_save mean_func_struct_aligned.aff12.1D \
+      -cost lpa \
+      -prefix mean_func_struct_aligned.nii.gz \
+      -1Dparam_save params.1D \
+      -twopass
+
+    if [[ -n "$map_file" ]]; then
+      3dAllineate \
+        -base "$base_anat" \
+        -input "$map_file" \
+        -1Dmatrix_apply mean_func_struct_aligned.aff12.1D \
+        -master "$base_anat" \
+        -final linear \
+        -prefix Static_Map_coreg.nii.gz
+    else
+      echo "Skipping Static Map coregistration (no map_file)."
+    fi
+
+    # ---------------- Sliding-window Movie (Python) ----------------
+    PRINT_YELLOW "Performing Step 6: Sliding-window static-map movie"
+    # local tr_val="1.0"
+    prompt_if_unset rotation_degree "By what degree do you want to rotate the brain from display?"
+    # local out_prefix="Static_Fast"
+
+    gh_py_exec make_static_maps_and_movie.py \
+      cleaned_mc_func.nii.gz \
+      --baseline-start 100 --baseline-end 300 \
+      --underlay-first-n 600 --window 200 \
+      --mode pos --vmax 15 --cmap blackbody \
+      --fps 10 --tr 1.0 --rotate $rotation_degree \
+      --out-prefix SCM_Map_movie_positive_only
 
     echo "✔ Completed pipeline for CSV line $line_no."
   )
@@ -352,5 +468,3 @@ done
 
 echo
 echo "All requested CSV lines processed."
-
-
