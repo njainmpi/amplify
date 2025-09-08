@@ -409,15 +409,6 @@ PY_PARSE
       fi
     fi
 
-    # # Ensure baseline start/end for the movie too
-    # if [[ -z "${base_start:-}" || -z "${base_end:-}" ]]; then
-    #   prompt_if_unset base_start "Enter baseline start index (for movie)" "100"
-    #   prompt_if_unset base_end   "Enter baseline end index (for movie)"   "300"
-    #   for v in base_start base_end; do
-    #     is_int "${!v}" || { echo "ERROR: $v must be an integer (got '${!v}')"; exit 1; }
-    #   done
-    # fi
-
     # ---------------- Coregistration (Using AFNI) ------------------
     PRINT_YELLOW "Performing Step 5: Coregistration of functional/static map to structural"
     local base_anat="$struct_coreg_dir/anatomy.nii.gz"

@@ -13,8 +13,11 @@ BIAS_CORRECTED_IMAGE () {
         echo ""
         echo ""
 
-        # echo "Please save the mask by the name 'mask_${input_file}'. "
-        fsleyes ${input_file}
+
+        3dTstat -mean -prefix mean_vol500_mc_func_mask.nii.gz ${input_file}'[0..499]'
+
+        echo "Please save the mask by the name 'mask_${input_file}'. "
+        fsleyes mean_vol500_mc_func_mask.nii.gz
         
         # if [ -f mask_${input_file} ]; then 
         #         echo -e "\033[32mCleaned Mask already exists.\033[0m "
