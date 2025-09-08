@@ -386,6 +386,10 @@ PY_PARSE
     PRINT_YELLOW "Performing Step 4: Generating Static Map (SCM)"
     local map_candidates=(Static_SCM*.nii.gz)
     local map_file=""
+
+    echo "Inspect Time Series of your data to decide baseline and signal periods."
+    
+    fsleyes cleaned_mc_func.nii.gz
     if ((${#map_candidates[@]})); then
       map_file="${map_candidates[0]}"
       echo "Static Map already exists: $map_file"
