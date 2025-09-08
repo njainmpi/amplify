@@ -382,38 +382,63 @@ PY_PARSE
     run_if_missing "cleaned_mc_func.nii.gz" -- \
       BIAS_CORRECTED_IMAGE mean_mc_func.nii.gz 100 mc_func.nii.gz
 
-    # ---------------- Time Series Inspection ---------------------
+  # ---------------- Time Series Inspection ---------------------
     echo "Inspect Time Series of your data to decide baseline and signal periods."
+    # Open viewer non-blocking, then pause explicitly
+    fsleyes cleaned_mc_func.nii.gz &  # do not block
+    read -rp "After reviewing in FSLeyes, press ENTER to continue..." _
 
-    fsleyes cleaned_mc_func.nii.gz
+    # Optional sanity check if run non-interactively
+    if [[ ! -t 0 ]]; then
+      echo "WARNING: stdin is not a TTY; interactive prompts may not appear."
+    fi
 
     # ---------------- Static Map (Generation) ----------------------
     PRINT_YELLOW "Performing Step 4: Generating Static Map (SCM)"
     local map_candidates=(Static_SCM*.nii.gz)
     local map_file=""
 
+    # Show what we see (helps debug)
     if ((${#map_candidates[@]})); then
-      map_file="${map_candidates[0]}"
-      echo "Static Map already exists: $map_file"
+      printf 'DEBUG: %s\n' "${map_candidates[@]}"
+    fi
+
+    # Always ask for indices; if a map exists, let the user choose reuse vs regenerate
+    local base_start base_end sig_start sig_end
+
+    prompt_if_unset base_start "Enter baseline start index" "100"
+    prompt_if_unset base_end   "Enter baseline end index"   "300"
+    prompt_if_unset sig_start  "Enter signal start index"   "301"
+    prompt_if_unset sig_end    "Enter signal end index"     "500"
+
+    for v in base_start base_end sig_start sig_end; do
+      is_int "${!v}" || { echo "ERROR: $v must be an integer (got '${!v}')"; exit 1; }
+    done
+
+    if ((${#map_candidates[@]})); then
+      read -rp "Static map exists (${map_candidates[0]}). Reuse it? [Y/n]: " reuse
+      reuse="${reuse:-Y}"
+      if [[ "$reuse" =~ ^[Yy]$ ]]; then
+        map_file="${map_candidates[0]}"
+        echo "Reusing existing Static Map: $map_file"
+      else
+        echo "Regenerating Static Map with your indices..."
+        Static_Map cleaned_mc_func.nii.gz "$base_start" "$base_end" "$sig_start" "$sig_end"
+      fi
     else
       echo "No Static_SCM*.nii.gz found. Generating now..."
-      local base_start base_end sig_start sig_end
-      prompt_if_unset base_start "Enter baseline start index" "100"
-      prompt_if_unset base_end   "Enter baseline end index"   "300"
-      prompt_if_unset sig_start  "Enter signal start index"    "301"
-      prompt_if_unset sig_end    "Enter signal end index"      "500"
-      for v in base_start base_end sig_start sig_end; do
-        is_int "${!v}" || { echo "ERROR: $v must be an integer (got '${!v}')"; exit 1; }
-      done
       Static_Map cleaned_mc_func.nii.gz "$base_start" "$base_end" "$sig_start" "$sig_end"
-      map_candidates=(Static_SCM*.nii.gz)
-      if ((${#map_candidates[@]})); then
-        map_file="${map_candidates[0]}"
-        echo "Generated Static Map: $map_file"
-      else
-        echo "WARNING: Static Map generation did not produce Static_SCM*.nii.gz"
-      fi
     fi
+
+    # Refresh candidates after (re)generation
+    map_candidates=(Static_SCM*.nii.gz)
+    if ((${#map_candidates[@]})); then
+      map_file="${map_candidates[0]}"
+      echo "Using Static Map: $map_file"
+    else
+      echo "WARNING: Static Map generation did not produce Static_SCM*.nii.gz"
+    fi
+
 
     # ---------------- Coregistration (Using AFNI) ------------------
     PRINT_YELLOW "Performing Step 5: Coregistration of functional/static map to structural"
