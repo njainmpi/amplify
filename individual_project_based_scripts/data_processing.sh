@@ -375,7 +375,7 @@ PY_PARSE
     # ---------------- tSNR Estimation (Using AFNI) -----------------
     PRINT_YELLOW "Performing Step 2: Obtaining Mean func, Std func and tSNR Maps"
     run_if_missing "tSNR_mc_func.nii.gz" "tSNR_mc_func+orig.HEAD" "tSNR_mc_func+orig.BRIK" -- \
-      TEMPORAL_SNR_using_AFNI mc_func+orig
+      TEMPORAL_SNR_using_FSL mc_func.nii.gz
 
     # ---------------- N4 Bias Field Correction ---------------------
     PRINT_YELLOW "Performing Step 3: Performing N4 Bias Field Correction of mean_mc_func"
