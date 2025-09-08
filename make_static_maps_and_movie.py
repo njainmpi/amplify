@@ -16,9 +16,29 @@ import nibabel as nib
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
+from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.cm import ScalarMappable
-import imageio as iio  # v2 API (FFmpeg backend)
+import imageio.v2 as iio  # v2 API (FFmpeg backend)
 
+
+
+# -------------------------------------------------------------------
+# Custom "blackbody" colormap registration (black → red → orange → yellow → white)
+# -------------------------------------------------------------------
+if "blackbody" not in plt.colormaps():
+    blackbody = LinearSegmentedColormap.from_list(
+        "blackbody",
+        [
+            (0.00, "#000000"),  # black
+            (0.25, "#1c0000"),  # very dark red
+            (0.45, "#6b0000"),  # deep red
+            (0.65, "#ff3c00"),  # orange-red
+            (0.82, "#ffae00"),  # yellow-orange
+            (1.00, "#ffffff"),  # white
+        ]
+    )
+    plt.register_cmap("blackbody", blackbody)
+    
 def parse_args():
     p = argparse.ArgumentParser(
         description="Make sliding-window static-map movie from 4D NIfTI (axial montage)."
@@ -47,7 +67,7 @@ def parse_args():
     p.add_argument("--cmap", default="seismic",
                    help="Matplotlib colormap for overlay (default: seismic)")
     p.add_argument("--cols", type=int, default=0,
-                   help="Montage columns (default: auto based on #slices)")
+                   help="Montage columns (default: 8 if slices>=8; else=#slices)")
     p.add_argument("--figw", type=float, default=14.0,
                    help="Figure width in inches (default: 14.0)")
     p.add_argument("--dpi", type=int, default=120,
@@ -67,21 +87,28 @@ def parse_args():
 
     return p.parse_args()
 
-def montage_grid(n_slices, cols):
-    if cols <= 0:
-        # Heuristic: make it "wide-ish"
-        cols = int(round(math.sqrt(n_slices))) or 1
-        cols = max(cols, 8) if n_slices >= 32 else cols
-        cols = min(cols, n_slices)
+def montage_grid(n_slices, user_cols):
+    """
+    If user_cols>0, honor it.
+    Otherwise use 8 columns when n_slices>=8; else use n_slices columns.
+    """
+    if user_cols and user_cols > 0:
+        cols = min(user_cols, n_slices)
+    else:
+        cols = 8 if n_slices >= 8 else n_slices
+    cols = max(cols, 1)
     rows = int(math.ceil(n_slices / cols))
     return rows, cols
 
 def compute_underlay_limits(underlay):
     # Robust grayscale limits (2nd–98th percentile)
-    lo = float(np.percentile(underlay[np.isfinite(underlay)], 2))
-    hi = float(np.percentile(underlay[np.isfinite(underlay)], 98))
+    finite = underlay[np.isfinite(underlay)]
+    lo = float(np.percentile(finite, 2)) if finite.size else 0.0
+    hi = float(np.percentile(finite, 98)) if finite.size else 1.0
     if not np.isfinite(lo) or not np.isfinite(hi) or lo == hi:
         lo, hi = float(np.nanmin(underlay)), float(np.nanmax(underlay))
+        if not np.isfinite(lo) or not np.isfinite(hi) or lo == hi:
+            lo, hi = 0.0, 1.0
     return lo, hi
 
 def _rot_k_from_degrees(deg: int) -> int:
@@ -160,12 +187,12 @@ def main():
             writer = iio.get_writer(mp4, fps=a.fps)  # fallback
         print(f"Writing video to: {mp4} (fps={a.fps})")
 
-    # Figure layout
+    # Figure layout — enforce 8 columns (or fewer if Z<8)
     rows, cols = montage_grid(Z, a.cols)
-    # Compute height so aspect is reasonable: each slice ~ square
     figw = a.figw
-    tile_h = (figw / cols)
-    figh = tile_h * rows + 1.6  # +suptitle/colorbar headroom
+    tile_h = (figw / max(cols, 1))         # keep tiles ~square
+    cbar_frac = 0.18                        # fraction of one tile for colorbar row
+    figh = tile_h * (rows + cbar_frac) + 1.2  # extra headroom for suptitle
 
     # Colorbar mappable
     sm = ScalarMappable(norm=ov_norm, cmap=a.cmap)
@@ -194,8 +221,12 @@ def main():
             continue
 
         # -------- draw frame (all z slices montage) --------
-        fig = plt.figure(figsize=(figw, figh), constrained_layout=True)
-        gs = fig.add_gridspec(rows, cols, wspace=0.02, hspace=0.02)
+        fig = plt.figure(figsize=(figw, figh), constrained_layout=False)
+
+        # GridSpec: rows of slices + 1 short row for the horizontal colorbar
+        height_ratios = [1.0] * rows + [cbar_frac]
+        gs = fig.add_gridspec(rows + 1, cols, wspace=0.02, hspace=0.02,
+                              height_ratios=height_ratios)
 
         # Time label
         if a.tr is not None:
@@ -207,10 +238,10 @@ def main():
 
         fig.suptitle(
             "Percent Change ((Mean(window) − Baseline) / Baseline) × 100\n" + subtitle,
-            fontsize=11, fontweight="bold", y=0.995
+            fontsize=11, fontweight="bold", y=0.98
         )
 
-        # Draw slices
+        # Draw slices (rows x cols)
         zi = 0
         for r in range(rows):
             for c in range(cols):
@@ -230,13 +261,12 @@ def main():
                     ax.imshow(o_draw, cmap=a.cmap, norm=ov_norm, alpha=0.7,
                               origin="lower", interpolation="nearest")
 
-                    # Keep original title behavior
                     ax.set_title(f"z={zi}", fontsize=8, pad=1.0)
                     zi += 1
 
-        # Single colorbar to the right
-        cax = fig.add_axes([0.92, 0.12, 0.015, 0.75])  # [left, bottom, width, height]
-        cb = fig.colorbar(sm, cax=cax)
+        # Horizontal colorbar on its own full-width row (below the montage)
+        cbar_ax = fig.add_subplot(gs[rows, :])
+        cb = fig.colorbar(sm, cax=cbar_ax, orientation="horizontal")
         if a.mode == "both":
             cb.set_label("Pct change (±)", fontsize=9)
         elif a.mode == "pos":
@@ -248,7 +278,7 @@ def main():
         tmp_png = None
         try:
             tmp_png = os.path.join(tempfile.gettempdir(), f"_frame_{k:06d}.png")
-            fig.savefig(tmp_png, dpi=a.dpi)
+            fig.savefig(tmp_png, dpi=a.dpi, bbox_inches="tight")
             plt.close(fig)
             writer.append_data(iio.imread(tmp_png))
         finally:
