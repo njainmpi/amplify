@@ -4,7 +4,7 @@ BIAS_CORRECTED_IMAGE () {
 
         input_file=$1
         local b_val=$2
-        4D_input_file=$3
+        func_file=$3
 
         # Step 1: Creating a mask from 3D mean image
         # fslmaths ${input_file} -thrp 30 -bin initial_${input_file}
@@ -15,7 +15,7 @@ BIAS_CORRECTED_IMAGE () {
         echo ""
 
 
-        3dTstat -mean -prefix mean_vol500_mc_func_mask.nii.gz ${4D_input_file}'[0..499]'
+        3dTstat -mean -prefix mean_vol500_mc_func_mask.nii.gz ${func_file}'[0..499]'
 
         echo "Please save the mask by the name 'mask_${input_file}'. "
         fsleyes mean_vol500_mc_func_mask.nii.gz
