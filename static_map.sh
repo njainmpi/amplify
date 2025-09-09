@@ -20,7 +20,7 @@ Static_Map () {
     3dTstat -mean -prefix signal_image_${sig_label}.nii.gz ${input_4d_data}"[${sig_start}..${sig_end}]"
 
     #Step 2b: Subtract the baseline and divide by the baseline
-    3dcalc -a signal_image_static.nii.gz -b baseline_image_static.nii.gz -expr '(a-b)/b' -prefix signal_processed.nii.gz
+    3dcalc -a signal_image_${sig_label}.nii.gz -b baseline_image_${base_label}.nii.gz -expr '(a-b)/b' -prefix signal_processed.nii.gz
 
     #Step 2c: Converting into percent by multiplying it by 100
     3dcalc -a signal_processed.nii.gz -expr 'a*100' -prefix Static_SCM_${base_label}_${sig_label}.nii.gz
