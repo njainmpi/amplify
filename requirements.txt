@@ -1,0 +1,21 @@
+# ---------- NumPy ----------
+numpy==1.21.6 ; python_version < "3.8"                         # Py3.7
+numpy==1.24.4 ; python_version >= "3.8" and python_version < "3.9"   # Py3.8
+numpy==1.26.4 ; python_version >= "3.9" and python_version < "3.12"  # Py3.9–3.11
+numpy>=2.0,<3.0 ; python_version >= "3.12"                      # Py3.12+
+
+# ---------- Matplotlib ----------
+matplotlib==3.5.3 ; python_version < "3.8"                      # Py3.7
+matplotlib==3.7.* ; python_version >= "3.8" and python_version < "3.12"  # Py3.8–3.11
+matplotlib>=3.8,<3.10 ; python_version >= "3.12"                # Py3.12+
+
+# ---------- NiBabel ----------
+nibabel==4.0.* ; python_version < "3.8"                         # Py3.7
+nibabel>=5.1,<6.0 ; python_version >= "3.8"                     # Py3.8–3.12+
+
+# ---------- Image IO / video ----------
+imageio>=2.22,<3.0
+imageio-ffmpeg>=0.4.7,<0.5
+
+# ---------- Utilities ----------
+tqdm>=4.66,<5.0
