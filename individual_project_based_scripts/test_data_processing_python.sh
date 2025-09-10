@@ -10,6 +10,50 @@ if [[ -z "${BASH_VERSION:-}" ]]; then
   exit 1
 fi
 
+
+# ===== Amplify: ensure Python deps (Py 3.7–3.12) =====
+echo "[deps] Checking Python environment..."
+
+if command -v python3 >/dev/null 2>&1; then
+  PYTHON=python3
+elif command -v python >/dev/null 2>&1; then
+  PYTHON=python
+else
+  echo "ERROR: python3/python not found in PATH." >&2
+  exit 1
+fi
+
+if [[ -z "${CONDA_PREFIX:-}" ]]; then
+  VENV_DIR=".venv"
+  if [[ ! -d "$VENV_DIR" ]]; then
+    echo "[deps] Creating venv at $VENV_DIR"
+    "$PYTHON" -m venv "$VENV_DIR"
+  fi
+  # shellcheck disable=SC1090
+  source "$VENV_DIR/bin/activate"
+  PYTHON=python
+else
+  echo "[deps] Conda detected ($CONDA_PREFIX); using current env."
+fi
+
+$PYTHON -m pip install --upgrade pip setuptools wheel >/dev/null
+$PYTHON -m pip uninstall -y argparse >/dev/null 2>&1 || true
+
+REQ_URL="https://raw.githubusercontent.com/njainmpi/amplify/main/requirements.txt"
+REQ_FILE="$(mktemp)"
+curl -fsSL "$REQ_URL" -o "$REQ_FILE" || { echo "ERROR: unable to download requirements.txt"; exit 1; }
+
+echo "[deps] Installing Python dependencies..."
+$PYTHON -m pip install -r "$REQ_FILE"
+
+if ! command -v ffmpeg >/dev/null 2>&1; then
+  echo "[deps] FFmpeg not found. Install manually (apt-get or brew)."
+fi
+echo "[deps] Python deps ready."
+# ===== /Amplify deps =====
+
+
+
 need() { command -v "$1" >/dev/null 2>&1 || { echo "ERROR: '$1' not found in PATH." >&2; exit 127; }; }
 need curl; need awk; need python3; command -v column >/dev/null 2>&1 || true
 need mktemp
