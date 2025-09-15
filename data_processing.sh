@@ -383,8 +383,7 @@ PY_PARSE
 
 
     # Always ask for indices; if a map exists, let the user choose reuse vs regenerate
-    local base_start base_end
-
+  
     fsleyes mc_func.nii.gz
 
     # Ask the user which volume they want
