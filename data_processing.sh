@@ -385,6 +385,9 @@ PY_PARSE
     # Always ask for indices; if a map exists, let the user choose reuse vs regenerate
     local base_start base_end
 
+    fsleyes mc_func.nii.gz
+
+    # Ask the user which volume they want
     prompt_if_unset base_start "Enter baseline start Volume index"
     prompt_if_unset base_end   "Enter baseline end Volume index"
 
