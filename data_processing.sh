@@ -41,7 +41,7 @@ read_default() {
 # --- Robust GitHub sourcing helper (Bash files only) ---
 gh_source() {
   local fname="$1"
-  local repo_base="https://raw.githubusercontent.com/njainmpi/amplify/main"
+  local repo_base="https://raw.githubusercontent.com/njainmpi/fMRI_analysis_pipeline/main"
   local try_paths=(
     "$fname"
     "individual_project_based_scripts/$fname"
@@ -121,6 +121,7 @@ gh_source temporal_snr_using_fsl.sh
 gh_source scm_visual.sh
 gh_source print_function.sh
 gh_source static_map.sh
+gh_source moving_results.sh
 # Python is executed via gh_py_exec (not sourced)
 
 # --- Color print fallbacks (if helper didn't provide them) ---
@@ -377,75 +378,52 @@ PY_PARSE
     run_if_missing "tSNR_mc_func.nii.gz" "tSNR_mc_func+orig.HEAD" "tSNR_mc_func+orig.BRIK" -- \
       TEMPORAL_SNR_using_FSL mc_func.nii.gz
 
-    # ---------------- N4 Bias Field Correction ---------------------
-    PRINT_YELLOW "Performing Step 3: Performing N4 Bias Field Correction of mean_mc_func"
-    run_if_missing "cleaned_mc_func.nii.gz" -- \
-      BIAS_CORRECTED_IMAGE mean_mc_func.nii.gz 100 mc_func.nii.gz
 
-  # ---------------- Time Series Inspection ---------------------
-    echo "Inspect Time Series of your data to decide baseline and signal periods."
-    # Open viewer non-blocking, then pause explicitly
-    fsleyes cleaned_mc_func.nii.gz &  # do not block
-    read -rp "After reviewing in FSLeyes, press ENTER to continue..." _
+    # ---------------- Generating Baseline Image and Creating Masks ----------------
 
-    # Optional sanity check if run non-interactively
-    if [[ ! -t 0 ]]; then
-      echo "WARNING: stdin is not a TTY; interactive prompts may not appear."
-    fi
-
-    # ---------------- Static Map (Generation) ----------------------
-    PRINT_YELLOW "Performing Step 4: Generating Static Map (SCM)"
-    local map_candidates=(Static_SCM*.nii.gz)
-    local map_file=""
-
-    # Show what we see (helps debug)
-    if ((${#map_candidates[@]})); then
-      printf 'DEBUG: %s\n' "${map_candidates[@]}"
-    fi
 
     # Always ask for indices; if a map exists, let the user choose reuse vs regenerate
-    local base_start base_end sig_start sig_end
+    local base_start base_end
 
-    prompt_if_unset base_start "Enter baseline start index" "100"
-    prompt_if_unset base_end   "Enter baseline end index"   "300"
-    prompt_if_unset sig_start  "Enter signal start index"   "301"
-    prompt_if_unset sig_end    "Enter signal end index"     "500"
+    prompt_if_unset base_start "Enter baseline start Volume index"
+    prompt_if_unset base_end   "Enter baseline end Volume index"
 
-    for v in base_start base_end sig_start sig_end; do
-      is_int "${!v}" || { echo "ERROR: $v must be an integer (got '${!v}')"; exit 1; }
-    done
-
-    if ((${#map_candidates[@]})); then
-      read -rp "Static map exists (${map_candidates[0]}). Reuse it? [Y/n]: " reuse
-      reuse="${reuse:-Y}"
-      if [[ "$reuse" =~ ^[Yy]$ ]]; then
-        map_file="${map_candidates[0]}"
-        echo "Reusing existing Static Map: $map_file"
-      else
-        echo "Regenerating Static Map with your indices..."
-        Static_Map cleaned_mc_func.nii.gz "$base_start" "$base_end" "$sig_start" "$sig_end"
-      fi
+    PRINT_YELLOW "Performing Step 3: Generating Baseline Image and Creating Masks"
+    PRINT_RED ">>> Computing baseline image (TR $base_start..$base_end)..."
+    3dTstat -mean -prefix "baseline_image_${base_start}_to_${base_end}.nii.gz" "mc_func.nii.gz[${base_start}..${base_end}]"
+  
+    PRINT_RED "Please create masks and save the file by the name: mask_mean_mc_func.nii.gz"
+       
+    if [ -f mask_mean_mc_func.nii.gz ]; then
+      echo "Mask Image exists."
     else
-      echo "No Static_SCM*.nii.gz found. Generating now..."
-      Static_Map cleaned_mc_func.nii.gz "$base_start" "$base_end" "$sig_start" "$sig_end"
+      PRINT_RED "Mask Image does not exist. Please create the mask and save it as mask_mean_mc_func.nii.gz"
+      fsleyes baseline_image_${base_start}_to_${base_end}.nii.gz
     fi
+  
+    fslmaths mc_func.nii.gz -mas mask_mean_mc_func.nii.gz cleaned_mc_func.nii.gz
 
-    # Refresh candidates after (re)generation
-    map_candidates=(Static_SCM*.nii.gz)
-    if ((${#map_candidates[@]})); then
-      map_file="${map_candidates[0]}"
-      echo "Using Static Map: $map_file"
-    else
-      echo "WARNING: Static Map generation did not produce Static_SCM*.nii.gz"
-    fi
+    # ---------------- Generating Static Maps ---------------------
 
+    # Signal_Change_Map -i cleaned_mc_func.nii.gz -s $base_start -e $base_end -o SCM_cleaned
 
     # ---------------- Coregistration (Using AFNI) ------------------
     PRINT_YELLOW "Performing Step 5: Coregistration of functional/static map to structural"
+    
     local base_anat="$struct_coreg_dir/anatomy.nii.gz"
+    
+    PRINT_RED "Please create a mask and save it by the name mask_anatomy.nii.gz"
+    if [ -f $struct_coreg_dir/mask_anatomy.nii.gz ]; then
+      echo "Mask Image exists."
+    else
+      PRINT_RED "Mask Image does not exist. Please create the mask and save it as mask_anatomy.nii.gz"
+      fsleyes "$struct_coreg_dir/anatomy.nii.gz"
+    fi
+    
+    fslmaths $struct_coreg_dir/anatomy.nii.gz -mas $struct_coreg_dir/mask_anatomy.nii.gz $struct_coreg_dir/cleaned_anatomy.nii.gz
 
     3dAllineate \
-      -base "$base_anat" \
+      -base $struct_coreg_dir/cleaned_anatomy.nii.gz \
       -input mean_mc_func.nii.gz \
       -1Dmatrix_save mean_func_struct_aligned.aff12.1D \
       -cost lpa \
@@ -453,33 +431,46 @@ PY_PARSE
       -1Dparam_save params.1D \
       -twopass
 
-    if [[ -n "$map_file" ]]; then
-      3dAllineate \
-        -base "$base_anat" \
-        -input "$map_file" \
-        -1Dmatrix_apply mean_func_struct_aligned.aff12.1D \
-        -master "$base_anat" \
-        -final linear \
-        -prefix Static_Map_coreg.nii.gz
-    else
-      echo "Skipping Static Map coregistration (no map_file)."
-    fi
 
-    # ---------------- Sliding-window Movie (Python) ----------------
-    PRINT_YELLOW "Performing Step 6: Sliding-window static-map movie"
-    # local tr_val="1.0"
-    prompt_if_unset rotation_degree "By what degree do you want to rotate the brain from display?"
-    # local out_prefix="Static_Fast"
+    fsleyes baseline_image_${base_start}_to_${base_end}.nii.gz SCM_cleaned_sliding_avg_win_*.nii.gz
 
-    gh_py_exec make_static_maps_and_movie.py \
-      cleaned_mc_func.nii.gz \
-      --baseline-start 100 --baseline-end 300 \
-      --underlay-first-n 600 --window 200 \
-      --mode pos --vmax 15 --cmap blackbody \
-      --fps 10 --tr 1.0 --rotate $rotation_degree \
-      --out-prefix SCM_Map_movie_positive_only
+    # Ask the user which volume they want
+    prompt_if_unset vol_idx "Enter the volume index you want to extract (0-based)"
+
+    # Extract that volume from the sliding-window file (assuming only one file matches)
+    input_file=$(ls SCM_cleaned_sliding_avg_win_*.nii.gz | head -n 1)
+
+    # Using FSL fslroi (start index, length=1)
+    fslroi "$input_file" "static_map_volume_${vol_idx}_tobe_coregistered.nii.gz" $vol_idx 1
+
+    3dAllineate \
+      -base "$struct_coreg_dir/cleaned_anatomy.nii.gz" \
+      -input "static_map_volume_${vol_idx}_tobe_coregistered.nii.gz" \
+      -1Dmatrix_apply mean_func_struct_aligned.aff12.1D \
+      -master "$struct_coreg_dir/cleaned_anatomy.nii.gz" \
+      -final linear \
+      -prefix Static_Map_coreg.nii.gz
+  
+
+    # # ---------------- Sliding-window Movie (Python) ----------------
+    # PRINT_YELLOW "Performing Step 6: Sliding-window static-map movie"
+    # # local tr_val="1.0"
+    # prompt_if_unset rotation_degree "By what degree do you want to rotate the brain from display?"
+    # # local out_prefix="Static_Fast"
+
+    # gh_py_exec make_static_maps_and_movie.py \
+    #   cleaned_mc_func.nii.gz \
+    #   --baseline-start 100 --baseline-end 300 \
+    #   --underlay-first-n 600 --window 200 \
+    #   --mode pos --vmax 15 --cmap blackbody \
+    #   --fps 10 --tr 1.0 --rotate $rotation_degree \
+    #   --out-prefix SCM_Map_movie_positive_only
 
     echo "✔ Completed pipeline for CSV line $line_no."
+  
+
+  move_results
+
   )
 }
 
