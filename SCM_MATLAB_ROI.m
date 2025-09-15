@@ -10,8 +10,8 @@ clear; clc;
 
 %% ---- SETTINGS ----
 in_nii        = 'cleaned_mc_func.nii.gz';  % path or will prompt
-baseline_idx  = 350:550;
-signal_idx    = 1300:1500;
+baseline_idx  = 700:800;
+signal_idx    = 960:1000;
 alpha_base    = 0.6;
 default_tiles = 8;                         % 4 or 8
 
