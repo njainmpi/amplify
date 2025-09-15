@@ -407,7 +407,7 @@ PY_PARSE
 
     # ---------------- Generating Static Maps ---------------------
 
-    # Signal_Change_Map -i cleaned_mc_func.nii.gz -s $base_start -e $base_end -o SCM_cleaned
+    Signal_Change_Map -i cleaned_mc_func.nii.gz -s $base_start -e $base_end -o SCM_cleaned
 
     # ---------------- Coregistration (Using AFNI) ------------------
     PRINT_YELLOW "Performing Step 5: Coregistration of functional/static map to structural"
