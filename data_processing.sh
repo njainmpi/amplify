@@ -417,7 +417,7 @@ PY_PARSE
     rm -f baseline_image_*.nii.gz signal_image_*.nii.gz Static_Map_*.nii.gz Static_Map_coreg.nii.gz
 
     3dTstat -mean -prefix "signal_image_${sig_start}_to_${sig_end}.nii.gz" "cleaned_mc_func.nii.gz[${sig_start}..${sig_end}]"
-    3dTstat -mean -prefix "baseline_image_${base_start}_to_${base_end}.nii.gz" "cleaned_mc_func.nii.gz[${sig_start}..${sig_end}]"
+    3dTstat -mean -prefix "baseline_image_${base_start}_to_${base_end}.nii.gz" "cleaned_mc_func.nii.gz[${base_start}..${base_end}]"
 
 
 
@@ -478,7 +478,10 @@ PY_PARSE
 
     #Step 3: Coregistering the static map to structural image using the saved affine matrix
     #Extracting Static Map Volume index to be coregistered
-    fslmaths "signal_image_${sig_start}_to_${sig_end}.nii.gz" -sub "baseline_image_${base_start}_to_${base_end}.nii.gz" -div "baseline_image_${base_start}_to_${base_end}.nii.gz" -mul 100 "Static_Map_${base_start}_to_${base_end}_and_${sig_start}_to_${sig_end}.nii.gz"
+    fslmaths "signal_image_${sig_start}_to_${sig_end}.nii.gz" \
+      -sub "baseline_image_${base_start}_to_${base_end}.nii.gz" \
+      -div "baseline_image_${base_start}_to_${base_end}.nii.gz" \
+      -mul 100 "Static_Map_${base_start}_to_${base_end}_and_${sig_start}_to_${sig_end}.nii.gz"
     
     rm -f Static_map_coreg.nii.gz
 
