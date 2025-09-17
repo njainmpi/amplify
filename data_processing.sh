@@ -392,7 +392,7 @@ PY_PARSE
 
     PRINT_YELLOW "Performing Step 3: Generating Baseline Image and Creating Masks"
     PRINT_RED ">>> Computing baseline image (TR $base_start..$base_end)..."
-    3dTstat -mean -prefix "baseline_image_${base_start}_to_${base_end}.nii.gz" "mc_func.nii.gz[${base_start}..${base_end}]"
+    3dTstat -mean -prefix "mean_baseline_image_${base_start}_to_${base_end}.nii.gz" "mc_func.nii.gz[${base_start}..${base_end}]"
   
     PRINT_RED "Please create masks and save the file by the name: mask_mean_mc_func.nii.gz"
        
@@ -400,31 +400,72 @@ PY_PARSE
       echo "Mask Image exists."
     else
       PRINT_RED "Mask Image does not exist. Please create the mask and save it as mask_mean_mc_func.nii.gz"
-      fsleyes baseline_image_${base_start}_to_${base_end}.nii.gz
+      fsleyes mean_baseline_image_${base_start}_to_${base_end}.nii.gz
     fi
   
     fslmaths mc_func.nii.gz -mas mask_mean_mc_func.nii.gz cleaned_mc_func.nii.gz
 
     # ---------------- Generating Static Maps ---------------------
 
-    Signal_Change_Map -i cleaned_mc_func.nii.gz -s $base_start -e $base_end -o SCM_cleaned
 
-    # ---------------- Coregistration (Using AFNI) ------------------
-    PRINT_YELLOW "Performing Step 5: Coregistration of functional/static map to structural"
-    
-    local base_anat="$struct_coreg_dir/anatomy.nii.gz"
-    
-    PRINT_RED "Please create a mask and save it by the name mask_anatomy.nii.gz"
-    if [ -f $struct_coreg_dir/mask_anatomy.nii.gz ]; then
-      echo "Mask Image exists."
+    # Always ask for indices; if a map exists, let the user choose reuse vs regenerate
+
+    # Ask the user which volume they want
+    prompt_if_unset sig_start "Enter Signal start Volume index"
+    prompt_if_unset sig_end   "Enter Signal end Volume index"
+
+    rm -f baseline_image_*.nii.gz signal_image_*.nii.gz Static_Map_*.nii.gz Static_Map_coreg.nii.gz
+
+    3dTstat -mean -prefix "signal_image_${sig_start}_to_${sig_end}.nii.gz" "cleaned_mc_func.nii.gz[${sig_start}..${sig_end}]"
+    3dTstat -mean -prefix "baseline_image_${base_start}_to_${base_end}.nii.gz" "cleaned_mc_func.nii.gz[${sig_start}..${sig_end}]"
+
+
+
+    if [ -f baseline_image_${base_start}_to_${base_end}.nii.gz ]; then
+      echo "SCM with defined baseline exists. Do you want to regenerate it?"
+      select yn in "Yes" "No"; do
+        case $yn in
+          Yes )
+            PRINT_RED "Regenerating SCM with defined baseline."
+            rm -f SCM_cleaned*
+            Signal_Change_Map -i cleaned_mc_func.nii.gz -s $base_start -e $base_end -o SCM_cleaned
+            break;;
+          No )
+            PRINT_RED "Using existing SCM with defined baseline."
+            break;;
+        esac
+      done  
     else
-      PRINT_RED "Mask Image does not exist. Please create the mask and save it as mask_anatomy.nii.gz"
-      fsleyes "$struct_coreg_dir/anatomy.nii.gz"
+      PRINT_RED "SCM with defined baseline doesn not exist. Generating SCM now."
+      Signal_Change_Map -i cleaned_mc_func.nii.gz -s $base_start -e $base_end -o SCM_cleaned
     fi
     
-    fslmaths $struct_coreg_dir/anatomy.nii.gz -mas $struct_coreg_dir/mask_anatomy.nii.gz $struct_coreg_dir/cleaned_anatomy.nii.gz
 
-    3dAllineate \
+    
+
+    # ---------------- Coregistration (Using AFNI) ------------------
+
+    
+    #Step 1: Cleaning the structural image by masking it with a manually created mask
+    PRINT_YELLOW "Performing Step 5: Coregistration of functional/static map to structural"
+    local base_anat="$struct_coreg_dir/anatomy.nii.gz"
+
+    PRINT_RED "Please create a mask and save it by the name mask_anatomy.nii.gz"
+    if [ -f $struct_coreg_dir/cleaned_anatomy.nii.gz ]; then
+      echo "Cleaned Anatomy Image exists."
+    else
+      PRINT_RED "Cleaned Anatomy does not exist. Please create the mask and save it as mask_anatomy.nii.gz"
+      fsleyes "$struct_coreg_dir/anatomy.nii.gz"
+      fslmaths $struct_coreg_dir/anatomy.nii.gz -mas $struct_coreg_dir/mask_anatomy.nii.gz $struct_coreg_dir/cleaned_anatomy.nii.gz
+    fi
+
+
+    #Step 2: Coregistering the mean functional image to structural image and saving the affine matrix
+    if [ -f mean_func_struct_aligned.aff12.1D ]; then
+      PRINT_GREEN "Affine Matrix to coregister Signal Change Map exists."
+    else
+      PRINT_RED "Affine Matrix to coregister Signal Change Map doesn not exist. 3dAllineate will be used to coregister the mean functional image to structural image now."
+      3dAllineate \
       -base $struct_coreg_dir/cleaned_anatomy.nii.gz \
       -input mean_mc_func.nii.gz \
       -1Dmatrix_save mean_func_struct_aligned.aff12.1D \
@@ -433,21 +474,17 @@ PY_PARSE
       -1Dparam_save params.1D \
       -twopass
 
+    fi
 
-    fsleyes baseline_image_${base_start}_to_${base_end}.nii.gz SCM_cleaned_sliding_avg_win_*.nii.gz
-
-    # Ask the user which volume they want
-    prompt_if_unset vol_idx "Enter the volume index you want to extract (0-based)"
-
-    # Extract that volume from the sliding-window file (assuming only one file matches)
-    input_file=$(ls SCM_cleaned_sliding_avg_win_*.nii.gz | head -n 1)
-
-    # Using FSL fslroi (start index, length=1)
-    fslroi "$input_file" "static_map_volume_${vol_idx}_tobe_coregistered.nii.gz" $vol_idx 1
+    #Step 3: Coregistering the static map to structural image using the saved affine matrix
+    #Extracting Static Map Volume index to be coregistered
+    fslmaths "signal_image_${sig_start}_to_${sig_end}.nii.gz" -sub "baseline_image_${base_start}_to_${base_end}.nii.gz" -div "baseline_image_${base_start}_to_${base_end}.nii.gz" -mul 100 "Static_Map_${base_start}_to_${base_end}_and_${sig_start}_to_${sig_end}.nii.gz"
+    
+    rm -f Static_map_coreg.nii.gz
 
     3dAllineate \
       -base "$struct_coreg_dir/cleaned_anatomy.nii.gz" \
-      -input "static_map_volume_${vol_idx}_tobe_coregistered.nii.gz" \
+      -input "Static_Map_${base_start}_to_${base_end}_and_${sig_start}_to_${sig_end}.nii.gz" \
       -1Dmatrix_apply mean_func_struct_aligned.aff12.1D \
       -master "$struct_coreg_dir/cleaned_anatomy.nii.gz" \
       -final linear \
