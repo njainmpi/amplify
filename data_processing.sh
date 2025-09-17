@@ -493,7 +493,7 @@ PY_PARSE
       -final linear \
       -prefix Static_Map_coreg.nii.gz
   
-
+    fslmaths Static_Map_coreg.nii.gz -mas $struct_coreg_dir/mask_anatomy.nii.gz cleaned_Static_map_coreg.nii.gz
     # # ---------------- Sliding-window Movie (Python) ----------------
     # PRINT_YELLOW "Performing Step 6: Sliding-window static-map movie"
     # # local tr_val="1.0"
