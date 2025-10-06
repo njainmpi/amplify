@@ -506,7 +506,7 @@ PY_PARSE
      -div "coreg_baseline_image_${base_start}_to_${base_end}.nii.gz" \
      -mul 100 "coreg_func_Static_Map_${base_start}_to_${base_end}_and_${sig_start}_to_${sig_end}.nii.gz"
     
-    fslmaths coreg_func_Static_Map_coreg.nii.gz -mas $struct_coreg_dir/mask_anatomy.nii.gz cleaned_coreg_func_Static_map.nii.gz
+    fslmaths coreg_func_Static_Map_${base_start}_to_${base_end}_and_${sig_start}_to_${sig_end}.nii.gz -mas $struct_coreg_dir/mask_anatomy.nii.gz cleaned_coreg_func_Static_map.nii.gz
 
     # # ---------------- Sliding-window Movie (Python) ----------------
     # PRINT_YELLOW "Performing Step 6: Sliding-window static-map movie"
