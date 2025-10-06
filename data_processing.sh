@@ -494,6 +494,20 @@ PY_PARSE
       -prefix Static_Map_coreg.nii.gz
   
     fslmaths Static_Map_coreg.nii.gz -mas $struct_coreg_dir/mask_anatomy.nii.gz cleaned_Static_map_coreg.nii.gz
+
+
+    3dAllineate -input cleaned_mc_func.nii.gz -1Dmatrix_apply mean_func_struct_aligned.aff12.1D -master "$struct_coreg_dir/cleaned_anatomy.nii.gz" -final linear -prefix fMRI_coregistered_to_struct.nii.gz
+
+    3dTstat -mean -prefix "coreg_signal_image_${sig_start}_to_${sig_end}.nii.gz" "fMRI_coregistered_to_struct.nii.gz[${sig_start}..${sig_end}]"
+    3dTstat -mean -prefix "coreg_baseline_image_${base_start}_to_${base_end}.nii.gz" "fMRI_coregistered_to_struct.nii.gz[${base_start}..${base_end}]"
+
+    fslmaths "coreg_signal_image_${sig_start}_to_${sig_end}.nii.gz" \
+     -sub "coreg_baseline_image_${base_start}_to_${base_end}.nii.gz" \
+     -div "coreg_baseline_image_${base_start}_to_${base_end}.nii.gz" \
+     -mul 100 "coreg_func_Static_Map_${base_start}_to_${base_end}_and_${sig_start}_to_${sig_end}.nii.gz"
+    
+    fslmaths coreg_func_Static_Map_coreg.nii.gz -mas $struct_coreg_dir/mask_anatomy.nii.gz cleaned_coreg_func_Static_map.nii.gz
+
     # # ---------------- Sliding-window Movie (Python) ----------------
     # PRINT_YELLOW "Performing Step 6: Sliding-window static-map movie"
     # # local tr_val="1.0"
