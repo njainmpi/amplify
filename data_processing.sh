@@ -134,7 +134,7 @@ if ! declare -F PRINT_RED    >/dev/null; then PRINT_RED()    { printf "\033[31m%
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 identity="$(whoami)@$(hostname)"
 
-default_root="/Volumes/Extreme_Pro/fMRI"
+default_root="/Volumes/pr_ohlendorf/fMRI"
 
 # ---- prompt/CLI for root_location ----
 root_location="${1:-}"
@@ -160,7 +160,7 @@ fi
 echo "Using root location: $root_location"
 
 # ---- CSV config (use absolute path!) ----
-csv="Animal_Experiments_Sequences.csv"
+csv="Animal_Experiments_Sequences_v1.csv"
 csv_path="$root_location/RawData/$csv"
 header_lines=2
 DELIM=$'\x1f'
