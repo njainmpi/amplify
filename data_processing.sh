@@ -344,6 +344,8 @@ PY_PARSE
 
     run_if_missing "anatomy.nii.gz" -- BRUKER_to_NIFTI "$datapath" "$structural_run" "$datapath/$structural_run/method"
     cp -f G1_cp.nii.gz anatomy.nii.gz || echo "WARNING: G1_cp.nii.gz not found for structural; continuing."
+    3dresample -orient LPI -inset G1_cp.nii.gz -prefix G1_cp.nii.gz -overwrite
+
 
     # ---------------- STRUCTURAL FOR COREGISTRATION ----------------
     FUNC_PARAM_EXTRACT "$datapath/$str_for_coreg"
@@ -356,6 +358,7 @@ PY_PARSE
 
     run_if_missing "anatomy.nii.gz" -- BRUKER_to_NIFTI "$datapath" "$str_for_coreg" "$datapath/$str_for_coreg/method"
     cp -f G1_cp.nii.gz anatomy.nii.gz || echo "WARNING: G1_cp.nii.gz not found for coreg structural; continuing."
+    3dresample -orient LPI -inset G1_cp.nii.gz -prefix G1_cp.nii.gz -overwrite
 
     # ---------------- FUNCTIONAL ----------------
     FUNC_PARAM_EXTRACT "$datapath/$run_number"
@@ -367,6 +370,7 @@ PY_PARSE
     CHECK_FILE_EXISTENCE "$func_dir" || true
 
     run_if_missing "G1_cp.nii.gz" -- BRUKER_to_NIFTI "$datapath" "$run_number" "$datapath/$run_number/method"
+    3dresample -orient LPI -inset G1_cp.nii.gz -prefix G1_cp.nii.gz -overwrite
 
     # ---------------- Motion Correction (Using AFNI) ----------------
     : "${MiddleVolume:?FUNC_PARAM_EXTRACT (or motion helper) did not set MiddleVolume}"
