@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+
+
 set -Eeuo pipefail
 set -o errtrace
 PS4='+ ${BASH_SOURCE}:${LINENO}:${FUNCNAME[0]}: '
@@ -122,7 +124,7 @@ gh_source scm_visual.sh
 gh_source print_function.sh
 gh_source static_map.sh
 gh_source moving_results.sh
-gh_source scm_from_coregsitered_functional.sh
+gh_source scm_from_coregsitered_functional_v1.sh
 # Python is executed via gh_py_exec (not sourced)
 
 # --- Color print fallbacks (if helper didn't provide them) ---
@@ -134,7 +136,7 @@ if ! declare -F PRINT_RED    >/dev/null; then PRINT_RED()    { printf "\033[31m%
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 identity="$(whoami)@$(hostname)"
 
-default_root="/Volumes/pr_ohlendorf/fMRI"
+default_root="/Volumes/Extreme_Pro/fMRI"
 
 # ---- prompt/CLI for root_location ----
 root_location="${1:-}"
@@ -372,23 +374,23 @@ PY_PARSE
     run_if_missing "G1_cp.nii.gz" -- BRUKER_to_NIFTI "$datapath" "$run_number" "$datapath/$run_number/method"
     # 3dresample -orient LPI -inset G1_cp.nii.gz -prefix G1_cp.nii.gz -overwrite
 
-    # ---------------- Motion Correction (Using AFNI) ----------------
-    : "${MiddleVolume:?FUNC_PARAM_EXTRACT (or motion helper) did not set MiddleVolume}"
+ 
+    # ===============================================================================================
+    #                Step 1: Motion Correction (Using AFNI)
     PRINT_YELLOW "Performing Step 1: Motion Correction"
-    run_if_missing "mc_func.nii.gz" "mc_func+orig.HEAD" "mc_func+orig.BRIK" -- \
-      MOTION_CORRECTION "$MiddleVolume" G1_cp.nii.gz mc_func
+    # ===============================================================================================
+    
+    : "${MiddleVolume:?FUNC_PARAM_EXTRACT (or motion helper) did not set MiddleVolume}"
+    
+    run_if_missing "mc_func.nii.gz" "mc_func+orig.HEAD" "mc_func+orig.BRIK" -- MOTION_CORRECTION "$MiddleVolume" G1_cp.nii.gz mc_func
 
-    # ---------------- tSNR Estimation (Using AFNI) -----------------
-    PRINT_YELLOW "Performing Step 2: Obtaining Mean func, Std func and tSNR Maps"
-    run_if_missing "tSNR_mc_func.nii.gz" "tSNR_mc_func+orig.HEAD" "tSNR_mc_func+orig.BRIK" -- \
-      TEMPORAL_SNR_using_FSL mc_func.nii.gz
-
-
-    # ---------------- Generating Baseline Image and Creating Masks ----------------
-
-
-    # Always ask for indices; if a map exists, let the user choose reuse vs regenerate
-  
+    
+    # ===============================================================================================
+    #                Step 2: Cleaning the functional data (Masking)
+    PRINT_YELLOW "Performing Step 2: Cleaning the functional data by generating mask"
+    # ===============================================================================================
+    
+    # Step 2a: Always ask for indices; if a map exists, let the user choose reuse vs regenerate
     fsleyes mc_func.nii.gz
 
     # Ask the user which volume they want
@@ -397,63 +399,68 @@ PY_PARSE
     prompt_if_unset sig_start "Enter Signal start Volume index"
     prompt_if_unset sig_end   "Enter Signal end Volume index"
 
-    PRINT_YELLOW "Performing Step 3: Generating Baseline Image and Creating Masks"
-    PRINT_RED ">>> Computing baseline image (TR $base_start..$base_end)..."
     3dTstat -mean -prefix "mean_baseline_image_${base_start}_to_${base_end}.nii.gz" "mc_func.nii.gz[${base_start}..${base_end}]"
-  
-    PRINT_RED "Please create masks and save the file by the name: mask_mean_mc_func.nii.gz"
-       
     if [ -f mask_mean_mc_func.nii.gz ]; then
       echo "Mask Image exists."
     else
       PRINT_RED "Mask Image does not exist. Please create the mask and save it as mask_mean_mc_func.nii.gz"
       fsleyes mean_baseline_image_${base_start}_to_${base_end}.nii.gz
     fi
-  
+    
+    rm -f mean_baseline_image_${base_start}_to_${base_end}.nii.gz # removing a file that is not needed further
     fslmaths mc_func.nii.gz -mas mask_mean_mc_func.nii.gz cleaned_mc_func.nii.gz
+    
 
-    # ---------------- Generating Static Maps ---------------------
+    # ===============================================================================================
+    #                Step 3: tSNR Estimation (Using AFNI)
+    PRINT_YELLOW "Performing Step 3: Obtaining Mean func, Std func and tSNR Maps"
+    # ===============================================================================================
+    
+    run_if_missing "tSNR_mc_func.nii.gz" "tSNR_mc_func+orig.HEAD" "tSNR_mc_func+orig.BRIK" -- TEMPORAL_SNR_using_FSL cleaned_mc_func.nii.gz
 
 
-    # Always ask for indices; if a map exists, let the user choose reuse vs regenerate
+    # ===============================================================================================
+    #                Step 4: Generating Baseline Image and Creating Masks
+    PRINT_YELLOW "Performing Step 4: Generating Baseline Image and Creating Masks"
+    # ===============================================================================================
+    
+    
+
+    #Step 4a: Generating Baseline Image
     rm -f baseline_image_*.nii.gz signal_image_*.nii.gz Static_Map_*.nii.gz Static_Map_coreg.nii.gz
+    fslmaths cleaned_mc_func.nii.gz -s 0.20 smoothed_cleaned_mc_func.nii.gz  #smoothed functional data for better static map generation
+    PRINT_YELLOW "Performing Step 4a: Generating Baseline and Signal Image"
+    3dTstat -mean -prefix "signal_image_${sig_start}_to_${sig_end}.nii.gz" "smoothed_cleaned_mc_func.nii.gz[${sig_start}..${sig_end}]"
+    3dTstat -mean -prefix "baseline_image_${base_start}_to_${base_end}.nii.gz" "smoothed_cleaned_mc_func.nii.gz[${base_start}..${base_end}]"
+  
+    # Step 4b: Generating Static Maps
+    fslmaths signal_image_${sig_start}_to_${sig_end}.nii.gz \
+        -sub baseline_image_${base_start}_to_${base_end}.nii.gz \
+        -div baseline_image_${base_start}_to_${base_end}.nii.gz \
+        -mul 100 \
+        tmp_signal_change_map_${base_start}_to_${base_end}_and_${sig_start}_to_${sig_end}.nii.gz
 
-    3dTstat -mean -prefix "signal_image_${sig_start}_to_${sig_end}.nii.gz" "cleaned_mc_func.nii.gz[${sig_start}..${sig_end}]"
-    3dTstat -mean -prefix "baseline_image_${base_start}_to_${base_end}.nii.gz" "cleaned_mc_func.nii.gz[${base_start}..${base_end}]"
-
-
-
-    if [ -f baseline_image_${base_start}_to_${base_end}.nii.gz ]; then
-      echo "SCM with defined baseline exists. Do you want to regenerate it?"
-      select yn in "Yes" "No"; do
-        case $yn in
-          Yes )
-            PRINT_RED "Regenerating SCM with defined baseline."
-            rm -f SCM_cleaned*
-            Signal_Change_Map -i cleaned_mc_func.nii.gz -s $base_start -e $base_end -o SCM_cleaned
-            break;;
-          No )
-            PRINT_RED "Using existing SCM with defined baseline."
-            break;;
-        esac
-      done  
-    else
-      PRINT_RED "SCM with defined baseline doesn not exist. Generating SCM now."
-      Signal_Change_Map -i cleaned_mc_func.nii.gz -s $base_start -e $base_end -o SCM_cleaned
-    fi
+    fslmaths tmp_signal_change_map_${base_start}_to_${base_end}_and_${sig_start}_to_${sig_end}.nii.gz -mas mask_mean_mc_func.nii.gz signal_change_map_${base_start}_to_${base_end}_and_${sig_start}_to_${sig_end}.nii.gz
     
-
+    # Step 4c: Normalising Entire Time Series to estiamte Percent Signal Change
+    fslmaths smoothed_cleaned_mc_func.nii.gz \
+        -sub baseline_image_${base_start}_to_${base_end}.nii.gz \
+        -div baseline_image_${base_start}_to_${base_end}.nii.gz \
+        -mul 100 \
+        tmp_norm_cleaned_mc_func.nii.gz
     
+    fslmaths tmp_norm_cleaned_mc_func.nii.gz -mas mask_mean_mc_func.nii.gz norm_cleaned_mc_func.nii.gz
 
-    # ---------------- Coregistration (Using AFNI) ------------------
+    rm -f tmp_signal_change_map_${base_start}_to_${base_end}_and_${sig_start}_to_${sig_end}.nii.gz tmp_norm_cleaned_mc_func.nii.gz
 
-    
-    #Step 1: Cleaning the structural image by masking it with a manually created mask
+    # ===============================================================================================
+    #                Step 5: Coregistration (Using AFNI)
     PRINT_YELLOW "Performing Step 5: Coregistration of functional/static map to structural"
-    local base_anat="$struct_coreg_dir/anatomy.nii.gz"
-
-    PRINT_RED "Please create a mask and save it by the name mask_anatomy.nii.gz"
-    if [ -f $struct_coreg_dir/cleaned_anatomy.nii.gz ]; then
+    # ===============================================================================================
+    
+    # Step 5a: Cleaning the structural image by masking it with a manually created mask
+   
+    if [[ -f $struct_coreg_dir/cleaned_anatomy.nii.gz ]]; then
       echo "Cleaned Anatomy Image exists."
     else
       PRINT_RED "Cleaned Anatomy does not exist. Please create the mask and save it as mask_anatomy.nii.gz"
@@ -461,90 +468,89 @@ PY_PARSE
       fslmaths $struct_coreg_dir/anatomy.nii.gz -mas $struct_coreg_dir/mask_anatomy.nii.gz $struct_coreg_dir/cleaned_anatomy.nii.gz
     fi
 
+    # Step 5b: Creating a mask image that includes cannulas as well
+    fslmaths mc_func.nii.gz -Tmean tmp_mean_mc_func.nii.gz #create temporary mean functional image
+    cp mask_mean_mc_func.nii.gz mask_mean_mc_func_cannulas.nii.gz #copy original mask to a new file to be edited that includes cannulas
+    PRINT_RED "Please edit the mask_mean_mc_func_cannulas.nii.gz to include cannulas and save it."
+    fsleyes mask_mean_mc_func_cannulas.nii.gz tmp_mean_mc_func.nii.gz #open in fsleyes for editing
+    fslmaths tmp_mean_mc_func.nii.gz -mas mask_mean_mc_func_cannulas.nii.gz cleaned_mean_mc_func_cannulas.nii.gz #create cleaned mean functional image including cannulas
+    rm -f tmp_mean_mc_func.nii.gz #remove temporary file
 
-    #Step 2: Coregistering the mean functional image to structural image and saving the affine matrix
+    #NOTE: Step 5c coregisters the static map created on functional data to structural image where as 
+    # Step 5d coregisters only the functional data to structural image and creates a coregistered functional time series and a signal change map from that coregistered functional time series.
+
+    # Step 5c: Coregistering the mean functional image to structural image and saving the affine matrix
     if [[ -f mean_func_struct_aligned.aff12.1D ]]; then
       PRINT_GREEN "Affine Matrix to coregister Signal Change Map exists."
     else
       PRINT_RED "Affine Matrix to coregister Signal Change Map doesn not exist. 3dAllineate will be used to coregister the mean functional image to structural image now."
       3dAllineate \
       -base $struct_coreg_dir/cleaned_anatomy.nii.gz \
-      -input mean_mc_func.nii.gz \
+      -input cleaned_mean_mc_func_cannulas.nii.gz \
       -1Dmatrix_save mean_func_struct_aligned.aff12.1D \
       -cost lpa \
       -prefix mean_func_struct_aligned.nii.gz \
       -1Dparam_save params.1D \
       -twopass
-
     fi
 
-    #Step 3: Coregistering the static map to structural image using the saved affine matrix
-    #Extracting Static Map Volume index to be coregistered
-    fslmaths "signal_image_${sig_start}_to_${sig_end}.nii.gz" \
-      -sub "baseline_image_${base_start}_to_${base_end}.nii.gz" \
-      -div "baseline_image_${base_start}_to_${base_end}.nii.gz" \
-      -mul 100 "Static_Map_${base_start}_to_${base_end}_and_${sig_start}_to_${sig_end}.nii.gz"
-    
-    
     if [[ -f Static_Map_coreg.nii.gz ]]; then
-      PRINT_GREEN "Affine Matrix to coregister Signal Change Map exists."
+      PRINT_GREEN "Coregistered Static Map exists."
     else
       PRINT_RED "Static Map to be coregistered does not exist. 3dAllineate will be used to coregister the Static Map to structural image now."
       3dAllineate \
         -base "$struct_coreg_dir/cleaned_anatomy.nii.gz" \
-        -input "Static_Map_${base_start}_to_${base_end}_and_${sig_start}_to_${sig_end}.nii.gz" \
+        -input "signal_change_map_${base_start}_to_${base_end}_and_${sig_start}_to_${sig_end}.nii.gz" \
         -1Dmatrix_apply mean_func_struct_aligned.aff12.1D \
         -master "$struct_coreg_dir/cleaned_anatomy.nii.gz" \
         -final linear \
-        -prefix Static_Map_coreg.nii.gz
+        -prefix signal_change_map_coregistered_structural_space.nii.gz
 
     fi
 
-  
-    fslmaths Static_Map_coreg.nii.gz -mas $struct_coreg_dir/mask_anatomy.nii.gz cleaned_Static_map_coreg.nii.gz
-
-
-    #Step 4: Coregistering the motion corrected functional data to structural image using the saved affine matrix
+    #Step 5d: Coregistering the motion corrected functional data to structural image using the saved affine matrix
     if [[ -f sm_fMRI_coregistered_to_struct.nii.gz ]]; then
       PRINT_GREEN "Coregistered functional data exists."
     else
       PRINT_RED "Coregistered functional data does not exist. 3dAllineate will be used to coregister the functional data to structural image now."
-    
-       scm_coregsitered_functional mc_func.nii.gz "$struct_coreg_dir/cleaned_anatomy.nii.gz" "$base_start" "$base_end" "$sig_start" "$sig_end"
+      scm_coregsitered_functional smoothed_cleaned_mc_func.nii.gz "$struct_coreg_dir/cleaned_anatomy.nii.gz" "$base_start" "$base_end" "$sig_start" "$sig_end"
     fi
+    
+    fslmaths signal_change_map_coregistered_structural_space.nii.gz -mas mask_mean_fMRI_coregistered_to_struct.nii.gz cleaned_signal_change_map_coregistered_structural_space.nii.gz
+    # ===============================================================================================
+    #                Step 6: Performing ROI Analysis
+    PRINT_YELLOW "Performing Step 6: Performing ROI Analysis"
+    # ===============================================================================================
+    
 
-    # Step 4: ROI Analysis
+    #Marking and saving Pattern of ROIs+
   
-    PRINT_RED "Please create ROIs on the coregistered static map and save them in the following particular format:"
+    PRINT_RED "Please create ROIs on the functional time series and save them in the following particular format:"
     echo ""
     PRINT_YELLOW "roi_{what protein/aav is there}_{is it direct injection or aav}_{analyte injeted}_{hemisphere side}.nii.gz"
     PRINT_YELLOW "For Example: if GCaMP6f is directly injected in the left hemisphere and dopamine is injected in the right hemisphere following a viral injection, then the following ROIs should be created:"
     echo ""
-    PRINT_RED "roi_GCaMP6f_direct_left.nii.gz"
-    PRINT_RED "roi_dopamine_aav_right.nii.gz"
+    PRINT_RED "roi_GCaMP6f_direct_left.nii.gz or roi_dopamine_aav_right.nii.gz"
     echo ""
 
     #Convert smoothed coregistered functional data to percent signal change
-    3dTstat -mean -prefix "tmp_sm_coreg_func_baseline_image_${base_start}_to_${base_end}.nii.gz" "sm_fMRI_coregistered_to_struct.nii.gz[${base_start}..${base_end}]"
+    # 3dTstat -mean -prefix "tmp_sm_coreg_func_baseline_image_${base_start}_to_${base_end}.nii.gz" "sm_fMRI_coregistered_to_struct.nii.gz[${base_start}..${base_end}]"
 
-    fslmaths sm_fMRI_coregistered_to_struct.nii.gz -sub tmp_sm_coreg_func_baseline_image_${base_start}_to_${base_end}.nii.gz -div tmp_sm_coreg_func_baseline_image_${base_start}_to_${base_end}.nii.gz -mul 100 norm_sm_fMRI_coregistered_to_struct.nii.gz 
-    fsleyes $struct_coreg_dir/cleaned_anatomy.nii.gz sm_coreg_func_Static_Map_*.nii.gz norm_sm_fMRI_coregistered_to_struct.nii.gz mean_fMRI_coregistered_to_struct.nii.gz
-    rm -f tmp_sm_coreg_func_baseline_image_${base_start}_to_${base_end}.nii.gz
+    
+    fsleyes mean_cleaned_mc_func.nii.gz signal_change_map_${base_start}_to_${base_end}_and_${sig_start}_to_${sig_end}.nii.gz norm_cleaned_mc_func.nii.gz smoothed_cleaned_mc_func.nii.gz
+    
     for roi in roi_*.nii.gz; do
-          
-        fslmeants -i sm_fMRI_coregistered_to_struct.nii.gz -m "$roi" -o "${roi%.nii.gz}.txt"
+      
+      fslmeants -i norm_cleaned_mc_func.nii.gz -m "$roi" -o "psc_${roi%.nii.gz}.txt"
       
     done
     
-    gh_py_exec Group_data_Analysis.py $root_location/AnalysedData/$project_name/$sub_project_name --tr 1.0 --generate-psc --movmean 60 --verbose
-  
-  echo "✔ Completed pipeline for CSV line $line_no."
+    echo "✔ Completed pipeline for CSV line $line_no."
 
-  move_results
+    move_results
 
   )
 }
-
 # ---- iterate over all selected lines (each in its own subshell) ----
 for ln in "${LINES[@]}"; do
   process_csv_line "$ln"
@@ -552,3 +558,12 @@ done
 
 echo
 echo "All requested CSV lines processed."
+
+
+# ===============================================================================================
+    #                Step 7: Performing Group Data Analysis for Time Course Extraction
+PRINT_YELLOW "Performing Step 7: Performing Group Data Analysis for Time Course Extraction"
+# ===============================================================================================
+
+python3 Group_data_Analysis.py $root_location/AnalysedData/$project_name/$sub_project_name --tr 1.0 --movmean 120 --verbose
+
