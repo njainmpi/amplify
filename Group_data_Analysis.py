@@ -265,8 +265,8 @@ def main():
                 fig, ax = plt.subplots(figsize=(8, 4.5), dpi=150)
                 ax.plot(t_file, s_file, linewidth=3)
                 ax.axvspan(10.0, 20.0, alpha=0.15, color='0.2')
-                ax.set_xlabel("Time (in minutes)", fontsize=40)
-                ax.set_ylabel("Percent Signal Change (%)", fontsize=40)
+                ax.set_xlabel("Time (in minutes)", fontsize=0)
+                ax.set_ylabel("Percent Signal Change (%)", fontsize=30)
                 ax.set_title(os.path.basename(svg_path))
                 apply_x_limits(ax)          # X-limits on all plots
                 style_axes(ax)
@@ -386,8 +386,8 @@ def main():
             ax.fill_between(tmin, avg - sem, avg + sem, alpha=0.2,
                             color=line_avg.get_color(), label="_nolegend_")
         ax.axvspan(10.0, 20.0, alpha=0.15, color='0.2')
-        ax.set_xlabel("Time (in minutes)", fontsize=40)
-        ax.set_ylabel("Percent Signal Change (%)", fontsize=40)
+        ax.set_xlabel("Time (in minutes)", fontsize=30)
+        ax.set_ylabel("Percent Signal Change (%)", fontsize=30)
         ax.set_title(f"Average Time Course — {gkey}")
         if sem is not None:
             ax.legend(loc="best", frameon=False)
@@ -416,7 +416,7 @@ def main():
                 ax.fill_between(tmin, mov_avg - mov_sem, mov_avg + mov_sem, alpha=0.2,
                                 color=line_mov.get_color(), label="_nolegend_")
             ax.axvspan(10.0, 20.0, alpha=0.15, color='0.2')
-            ax.set_xlabel("Time (in minutes)", fontsize=40)
+            ax.set_xlabel("Time (in minutes)", fontsize=30)
             ax.set_ylabel("% Signal Change", fontsize=30)
             ax.set_title(f"Movmean (w={args.movmean}) — {gkey}")
             ax.legend(loc="best", frameon=False)
@@ -459,14 +459,14 @@ def main():
     if combined_series:
         combined_svg = os.path.join(outdir, "Combined_Movmean_Averages.svg")
         import matplotlib.pyplot as plt
-        fig, ax = plt.subplots(figsize=(20, 12), dpi=1200)
+        fig, ax = plt.subplots(figsize=(14, 8), dpi=1200)
         for gkey, tmin, mov_avg, mov_sem in sorted(combined_series, key=lambda x: x[0].lower()):
             col = group_colors[gkey]
             ax.plot(tmin, mov_avg, linewidth=3, label=gkey, color=col)
             if mov_sem is not None:
                 ax.fill_between(tmin, mov_avg - mov_sem, mov_avg + mov_sem, alpha=0.12, color=col, label='_nolegend_')
         ax.axvspan(10.0, 20.0, alpha=0.15, color='0.2')
-        ax.set_xlabel("Time (in minutes)", fontsize=40)
+        ax.set_xlabel("Time (in minutes)", fontsize=30)
         ax.set_ylabel("% Signal Change", fontsize=30)
         ax.set_title("Combined Movmean Averages (per group)")
         ax.legend(loc="best", frameon=False, ncol=1)
@@ -484,19 +484,19 @@ def main():
     if scatter_data:
         scatter_svg = os.path.join(outdir, "Scatter_Max_20_30min_by_Group.svg")
         import matplotlib.pyplot as plt
-        fig, ax = plt.subplots(figsize=(20, 12), dpi=1200)
+        fig, ax = plt.subplots(figsize=(14, 8), dpi=1200)
 
         x_positions = np.arange(1, len(scatter_data) + 1)  # 1..G
 
         for i, (gkey, color, marker, maxima, group_summary) in enumerate(scatter_data, start=1):
             for y in maxima:
-                ax.scatter(i, y, marker=marker, s=140, color=color, linewidths=2, edgecolors='none')
-            ax.hlines(y=group_summary, xmin=i-0.22, xmax=i+0.22, colors=color, linewidth=2)
+                ax.scatter(i, y, marker=marker, s=140, color=color, linewidths=3, edgecolors='none')
+            ax.hlines(y=group_summary, xmin=i-0.22, xmax=i+0.22, colors=color, linewidth=3)
 
         ax.set_xticks(x_positions)
-        ax.set_xticklabels([gkey for gkey, _, _, _, _ in scatter_data], rotation=25, ha='right', fontsize=24)
+        ax.set_xticklabels([gkey for gkey, _, _, _, _ in scatter_data], rotation=25, ha='right', fontsize=30)
         ax.set_ylabel("% Signal Change", fontsize=30)
-        ax.set_title("Max (20–30 min): Per-file vs Group-Average Peak", fontsize=32)
+        ax.set_title("Max (20–30 min): Per-file vs Group-Average Peak", fontsize=30)
         apply_mov_y_limits(ax)
         style_axes(ax)
         ax.margins(x=0.02)
@@ -505,7 +505,7 @@ def main():
         legend_elems = [
             Line2D([0], [0], marker='o', color='black', linestyle='None', markersize=10,
                    label='Per-file Max (20–30 min)', markerfacecolor='black'),
-            Line2D([0], [0], color='black', linestyle='-', linewidth=2,
+            Line2D([0], [0], color='black', linestyle='-', linewidth=3,
                    label='Group-Average Max (20–30 min)'),
         ]
         ax.legend(handles=legend_elems, loc='best', frameon=False)
