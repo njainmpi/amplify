@@ -4,8 +4,8 @@ import numpy as np
 from datetime import datetime
 
 # ----- AXIS LIMITS -----
-AX_XMIN, AX_XMAX = 0.0, 30.0     # minutes for ALL line plots
-MOV_YMIN, MOV_YMAX = -6.0, 15.0  # y-limits for Movmean_* and Combined plot (and scatter)
+AX_XMIN, AX_XMAX = 0.0, 40.0     # minutes for ALL line plots
+MOV_YMIN, MOV_YMAX = -6.0, 7.0  # y-limits for Movmean_* and Combined plot (and scatter)
 # -----------------------
 
 # Patterns
