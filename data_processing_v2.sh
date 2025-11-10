@@ -525,8 +525,9 @@ PY_PARSE
     fslmaths signal_change_map_coregistered_structural_space.nii.gz -mas mask_mean_fMRI_coregistered_to_struct.nii.gz cleaned_signal_change_map_coregistered_structural_space.nii.gz
     PRINT_GREEN "cleaned_signal_change_map_coregistered_structural_space.nii.gz is the Signal Change Map generated from functional data and coregistered to structural image."
 
-    fslmatths sm_coreg_func_Static_Map*.nii.gz -mas mask_mean_fMRI_coregistered_to_struct.nii.gz cleaned_sm_cleaned_coreg_func_Static_Map.nii.gz
+    fslmaths sm_coreg_func_Static_Map*.nii.gz -mas mask_mean_fMRI_coregistered_to_struct.nii.gz cleaned_sm_cleaned_coreg_func_Static_Map.nii.gz
     PRINT_GREEN "cleaned_sm_cleaned_coreg_func_Static_Map is the Signal Change Map generated from coregistered functional data to structural image."
+
     # ===============================================================================================
     #                Step 6: Performing ROI Analysis
     PRINT_YELLOW "Performing Step 6: Performing ROI Analysis"
