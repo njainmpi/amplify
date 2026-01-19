@@ -1,592 +1,1231 @@
 #!/bin/bash
 
+# represents main section of the data analysis pipeline
+## respresents subsections of the main section
+### represents individual steps within the subsections
+#### represents comments for better understanding of the code
 
-set -Eeuo pipefail
-set -o errtrace
-PS4='+ ${BASH_SOURCE}:${LINENO}:${FUNCNAME[0]}: '
-trap 'code=$?; echo "ERROR: command \"${BASH_COMMAND}\" exited $code at ${BASH_SOURCE[0]}:${LINENO}"; exit $code' ERR
-
-# --- ensure we're using bash, not sh ---
-if [[ -z "${BASH_VERSION:-}" ]]; then
-  echo "Please run this script with bash (not sh)." >&2
-  exit 1
-fi
-
-need() { command -v "$1" >/dev/null 2>&1 || { echo "ERROR: '$1' not found in PATH." >&2; exit 127; }; }
-need curl; need awk; need python3; command -v column >/dev/null 2>&1 || true
-need mktemp
-
-# Nice glob behaviour for optional files like Static_SCM*.nii.gz
-shopt -s nullglob
-
-# --- Expand user paths like ~, $HOME, relative → absolute (safe; no eval) ---
-expand_path() {
-  python3 - "$1" <<'PY_EXPAND'
-import os, sys
-p = sys.argv[1] if len(sys.argv)>1 else ''
-print(os.path.abspath(os.path.expanduser(os.path.expandvars(p or '.'))))
-PY_EXPAND
+# ============================================================
+# Terminal safety
+# ============================================================
+reset_terminal() {
+  tput sgr0
+  stty sane
 }
+trap reset_terminal EXIT
 
-# --- Portable readline prompt with default (works on macOS Bash 3.2) ---
-# Usage: read_default "Prompt text" "DEFAULT" varname
-read_default() {
-  local _prompt="$1" _default="$2" _outvar="$3"
-  if help read 2>/dev/null | grep -q ' -i '; then
-    read -e -r -p "${_prompt} [${_default}]: " -i "${_default}" REPLY || true
-  else
-    read -e -r -p "${_prompt} [${_default}]: " REPLY || true
-  fi
-  printf -v "${_outvar}" '%s' "${REPLY:-${_default}}"
-}
+# ==============================================================================================================================================================================================================
+# Importing in-house made functions to be used throughout the analysis pipeline
+# ==============================================================================================================================================================================================================
 
-# --- Robust GitHub sourcing helper (Bash files only) ---
-gh_source() {
-  local fname="$1"
-  local repo_base="https://raw.githubusercontent.com/njainmpi/fMRI_analysis_pipeline/main"
-  local try_paths=(
-    "$fname"
-    "individual_project_based_scripts/$fname"
-    "toolbox/$fname"
-    "scripts/$fname"
-  )
-  local url status tmp="/tmp/ghsrc.$$"
-  for p in "${try_paths[@]}"; do
-    url="$repo_base/$p"
-    status="$(curl -sS -L -w '%{http_code}' -o "$tmp" "$url" || echo 000)"
-    if [[ "$status" == "200" ]] && [[ -s "$tmp" ]]; then
-      # shellcheck source=/dev/null
-      source "$tmp"
-      rm -f "$tmp"
-      echo "Sourced: $p"
-      return 0
-    fi
-  done
-  echo "ERROR: Could not fetch '$fname' from any known path. Tried: ${try_paths[*]}" >&2
-  exit 2
-}
+## Prime functions
 
-# --- Run a Python file from local or GitHub ---
-# Usage: gh_py_exec make_static_maps_and_movie.py --args...
-gh_py_exec() {
-  local fname="$1"; shift || true
-  local local_py="./$fname"
-  if [[ -f "$local_py" ]]; then
-    echo "Running local Python: $local_py $*"
-    python3 "$local_py" "$@"
-    return $?
-  fi
+bruker_to_nifti(){
+    
+    local in_path="$1"
+    local scan_number="$2"
+    local out_name="${3}"
 
-  local repo_base="https://raw.githubusercontent.com/njainmpi/amplify/main"
-  local try_paths=(
-    "$fname"
-    "individual_project_based_scripts/$fname"
-    "toolbox/$fname"
-    "scripts/$fname"
-  )
+    scan_dir="$in_path/$scan_number"
+    method_file="$scan_dir/method"
 
-  local url tmp status
-  tmp="$(mktemp)"; mv "$tmp" "${tmp}.py"; tmp="${tmp}.py"
+    brkraw tonii $in_path/ -s $scan_number
 
-  for p in "${try_paths[@]}"; do
-    url="$repo_base/$p"
-    status="$(curl -sS -L -w '%{http_code}' -o "$tmp" "$url" || echo 000)"
-    if [[ "$status" == "200" && -s "$tmp" ]]; then
-      echo "Running Python from GitHub: $p $*"
-      python3 "$tmp" "$@"; local rc=$?
-      rm -f "$tmp"
-      return "$rc"
-    fi
-  done
+    if grep -q "PVM_NEchoImages" "$method_file"; then
+        NoOfEchoImages=$(awk -F= '/PVM_NEchoImages/ {gsub(/[^0-9]/,"",$2); print $2; exit}' "$method_file")
 
-  rm -f "$tmp"
-  echo "ERROR: Could not fetch Python '$fname' from known paths." >&2
-  return 2
-}
-
-# --- Source all helpers (your list) ---
-gh_source toolbox_name.sh
-gh_source log_execution.sh
-gh_source missing_run.sh
-gh_source folder_existence_function.sh
-gh_source func_parameters_extraction.sh
-gh_source temporal_smoothing.sh
-gh_source check_spikes.sh
-gh_source coregistration.sh
-gh_source data_conversion.sh
-gh_source motion_correction.sh
-gh_source quality_check.sh
-gh_source signal_change_map.sh
-gh_source smoothing_using_fsl.sh
-gh_source temporal_snr_using_afni.sh
-gh_source temporal_snr_using_fsl.sh
-gh_source scm_visual.sh
-gh_source print_function.sh
-gh_source static_map.sh
-gh_source moving_results.sh
-gh_source find_and_copy_masks.sh
-gh_source scm_from_coregsitered_functional_v1.sh
-# Python is executed via gh_py_exec (not sourced)
-
-# --- Color print fallbacks (if helper didn't provide them) ---
-if ! declare -F PRINT_CYAN   >/dev/null; then PRINT_CYAN()   { printf "\033[36m%s\033[0m\n" "$*"; }; fi
-if ! declare -F PRINT_YELLOW >/dev/null; then PRINT_YELLOW() { printf "\033[33m%s\033[0m\n" "$*"; }; fi
-if ! declare -F PRINT_RED    >/dev/null; then PRINT_RED()    { printf "\033[31m%s\033[0m\n" "$*"; }; fi
-
-# --- resolve script dir for local files like path_definition.txt ---
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-identity="$(whoami)@$(hostname)"
-
-default_root="/Volumes/Extreme_Pro/fMRI"
-
-# ---- prompt/CLI for root_location ----
-root_location="${1:-}"
-if [[ "${root_location:-}" == "--root" ]]; then
-  shift
-  root_location="${1:-}"
-  shift || true
-fi
-
-if [[ -z "${root_location:-}" ]]; then
-  echo
-  read_default "Root location" "${default_root}" root_location_input
-  root_location="${root_location_input}"
-fi
-
-# Expand ~, $VARS, and relative paths → absolute
-root_location="$(expand_path "$root_location")"
-
-if [[ ! -d "$root_location" ]]; then
-  echo "ERROR: root location '$root_location' does not exist." >&2
-  exit 1
-fi
-echo "Using root location: $root_location"
-
-# ---- CSV config (use absolute path!) ----
-csv="Animal_Experiments_Sequences_v1.csv"
-csv_path="$root_location/RawData/$csv"
-header_lines=2
-DELIM=$'\x1f'
-
-if [[ ! -f "$csv_path" ]]; then
-  echo "ERROR: $csv not found at $csv_path"
-  exit 1
-fi
-
-# ---- show available rows (first 8 columns) ----
-echo -e "\n== Available rows (CSV line | first 8 columns) =="
-python3 - "$csv_path" "$header_lines" <<'PY_AVAIL' | { column -t -s'|' || cat; }
-import csv, sys
-path = sys.argv[1]; skip_n = int(sys.argv[2])
-def try_decode(b):
-    for enc in ('utf-8-sig','cp1252','latin-1'):
-        try: return b.decode(enc)
-        except UnicodeDecodeError: continue
-    return b.decode('utf-8', errors='replace')
-def clean(s): return (s or '').replace('|','¦').strip()
-print("Line|Col1|Col2|Col3|Col4|Col5|Col6|Col7|Col8")
-with open(path,'rb') as f:
-    for lineno, raw in enumerate(f, start=1):
-        if lineno <= skip_n: continue
-        if not raw.strip(): continue
-        row = next(csv.reader([try_decode(raw)]))
-        row = [clean(c) for c in row]
-        first8 = (row + [""]*8)[:8]
-        print("|".join([str(lineno)] + first8))
-PY_AVAIL
-
-# ---- ask for multiple line numbers / ranges ----
-echo
-echo "You can choose multiple CSV lines, e.g.: 5,7,10-12"
-read -rp "Enter CSV LINE NUMBERS (or q to quit): " sel
-case "$sel" in q|Q) echo "Aborted."; exit 0 ;; esac
-[[ -n "$sel" ]] || { echo "No selection."; exit 1; }
-
-# ---- expand comma/range list to a unique, sorted list of integers > header_lines ----
-expand_lines() {
-  local input="$1" part a b n
-  IFS=',' read -r -a parts <<< "$input"
-  for part in "${parts[@]}"; do
-    part="${part//[[:space:]]/}"
-    if [[ "$part" =~ ^[0-9]+-[0-9]+$ ]]; then
-      a="${part%-*}"; b="${part#*-}"
-      if (( a > b )); then n="$a"; a="$b"; b="$n"; fi
-      for (( n=a; n<=b; n++ )); do echo "$n"; done
-    elif [[ "$part" =~ ^[0-9]+$ ]]; then
-      echo "$part"
+        echo "No of echo images $NoOfEchoImages"
+        if [ $NoOfEchoImages == 1 ]; then 
+            cp *${scan_number}* G1_cp.nii.gz
+        else
+            fslmerge -t ${scan_number}'_combined_images' *${scan_number}*
+            cp ${scan_number}'_combined_images'* G1_cp.nii.gz
+        fi
     else
-      echo "ERROR: invalid token '$part' in selection." >&2
-      exit 1
+        echo "No of Echoes not present"
+        cp *${scan_number}* G1_cp.nii.gz
     fi
-  done | awk -v hdr="$header_lines" '($1>hdr){print $1}' | sort -n | uniq
+
+    echo ""
+    echo "Fixing orientation to LPI"
+    echo ""
+    3dresample -orient LPI -inset G1_cp.nii.gz -prefix G1_cp_resampled.nii.gz -overwrite
+
+    cp G1_cp_resampled.nii.gz ${out_name}
+    fslhd ${out_name} > NIFTI_file_header_info.txt
 }
 
-# ---- macOS-friendly read into array (no mapfile on Bash 3.2) ----
-LINES=()
-if [[ -n "${BASH_VERSINFO:-}" && "${BASH_VERSINFO[0]}" -ge 4 ]]; then
-  mapfile -t LINES < <(expand_lines "$sel")
-else
-  while IFS= read -r ln; do
-    [[ -n "$ln" ]] && LINES+=("$ln")
-  done < <(expand_lines "$sel")
-fi
-((${#LINES[@]})) || { echo "No valid data lines selected (remember header lines are 1..$header_lines)."; exit 1; }
+masking_file(){
 
-# ---- helpers ----
-is_int() { [[ "$1" =~ ^-?[0-9]+$ ]]; }
-prompt_if_unset() {
-  local __var="$1"; shift
-  local __prompt="$1"; shift || true
-  local __def="${1:-}"
-  if [[ -z "${!__var:-}" ]]; then
-    if [[ -n "$__def" ]]; then
-      read -rp "$__prompt [$__def]: " __ans
-      printf -v "$__var" "%s" "${__ans:-$__def}"
+    local input_file="${1}"
+    local out_file="${2}"
+    local mask_name="mask_${input_file}"
+
+    if [[ ! -f "$mask_name" ]]; then
+        echo "❌ Mask file $mask_name not found. Please create a mask"
+        fsleyes "$input_file"
+        return 1
     else
-      read -rp "$__prompt: " __ans
-      printf -v "$__var" "%s" "$__ans"
+        echo "✔ Mask file found: mask_${input_file}"
     fi
+
+    fslmaths ${input_file} -mas ${mask_name} ${out_file}    
+}
+
+extract_middle_volume(){
+
+    local input_file="${1}"
+    local out_file="${2}"
+    local middle_vol="${3}"
+    fslroi ${input_file} ${out_file} ${middle_vol} 1
+}
+
+motion_correction () {
+
+    local base_image="${1}"
+    local input_image="${2}"
+    local output_prefix="${3}"
+
+    3dvolreg -prefix ${output_prefix} -base ${base_image} -verbose -1Dfile motion.1D -1Dmatrix_save mats -linear -float -maxdisp1D rmsabs.1D ${input_image}
+    3dAFNItoNIFTI ${output_prefix}'+orig.BRIK'
+    if [ -f ${output_prefix}.nii ]; then
+        gzip -1 ${output_prefix}.nii
+    else
+        echo "gzip exists"
+    fi
+    # 1Dplot -volreg -sep motion.1D
+    1dplot -xlabel Time -ylabel "Translation (mm)" -title "3dvolreg translations" -dx 1 -jpgs 640x144 rest_translation 'motion.1D[3..5]'
+    1dplot -xlabel Time -ylabel "Rotations (degree)" -title "3dvolreg rotations" -dx 1 -jpgs 640x144 rest_rotation 'motion.1D[0..2]'
+
+    rm -f ${3}'+orig.BRIK' ${3}'+orig.HEAD'
+}
+
+tSNR () {
+    
+    local input_file="${1}"
+
+    echo "******* Computing Temporal SNR *******"
+
+    fslmaths ${input_file} -Tmean mean_${input_file}
+    fslmaths ${input_file} -Tstd std_${input_file}
+    fslmaths mean_${input_file} -div std_${input_file} tSNR_${input_file}
+    rm -f mean_${input_file} std_${input_file}
+}
+
+signal_change_map(){
+
+    local input="${1}"
+    local base_start="${2}"
+    local base_end="${3}"
+    local sig_start="${4}"
+    local sig_end="${5}"
+    local out_psc="${6}"
+    
+    dim_inplane=$(fslhd ${input} | awk '/^pixdim4/ {print $2}')
+    
+    3dTstat -mean -prefix "signal_image_${sig_start}_to_${sig_end}.nii.gz" "${input}[${sig_start}..${sig_end}]"
+    3dTstat -mean -prefix "baseline_image_${base_start}_to_${base_end}.nii.gz" "${input}[${base_start}..${base_end}]"
+
+    echo "Estimating Signal Change Map"
+    fslmaths "signal_image_${sig_start}_to_${sig_end}.nii.gz" -sub "baseline_image_${base_start}_to_${base_end}.nii.gz" -div "baseline_image_${base_start}_to_${base_end}.nii.gz" -mul 100 "${out_psc}.nii.gz" #### Estimates Static SCM ####
+    
+    echo "Estimating Signal Change Time Series"
+    fslmaths ${input} -sub "baseline_image_${base_start}_to_${base_end}.nii.gz" -div "baseline_image_${base_start}_to_${base_end}.nii.gz" -mul 100 "time_series_${out_psc}.nii.gz" #### Estimates SC Time Series ####
+
+
+    rm -f "signal_image_${sig_start}_to_${sig_end}.nii.gz" "baseline_image_${base_start}_to_${base_end}.nii.gz"
+}
+
+coregistration_afni() {
+
+  # -------- Arguments (named via env or positional) --------
+  local input_file1="$1"
+  local input_file2="$2"
+  local reference_file="$3"
+  local output_file1="$4"
+  local output_file2="$5"
+
+  local estimate_affine="${6:-true}"
+  local apply_affine="${7:-true}"
+  local affine_mat="${8:-mean_func_struct_aligned.aff12.1D}"
+
+  # -------- Safety checks --------
+  if [[ ! -f "$reference_file" ]]; then
+    echo "[ERROR] reference_file must be provided" >&2
+    return 1
+  fi
+
+  # -------- STEP 1: Estimate affine --------
+  if [[ "$estimate_affine" == "true" ]]; then
+
+    [[ -z "$input_file1" ]] && { echo "[ERROR] input_file1 required for affine estimation"; return 1; }
+    [[ -z "$output_file1" ]] && { echo "[ERROR] output_file1 required for affine estimation"; return 1; }
+
+    3dAllineate -input "$input_file1" -base "$reference_file" -prefix "$output_file1" -1Dmatrix_save "$affine_mat" -cost lpa -twopass -1Dparam_save params.1D -verb
+
+    if [[ $? -ne 0 ]]; then
+      echo "[ERROR] Affine estimation failed" >&2
+      return 1
+    fi
+
+    echo "[OK] Affine estimated and saved → $affine_mat"
+    echo "[OK] Coregistered image (step 1) → $output_file1"
+  fi
+
+  # -------- STEP 2: Apply affine --------
+  if [[ "$apply_affine" == "true" ]]; then
+
+    [[ -z "$input_file2" ]] && { echo "[ERROR] input_file2 required for affine application"; return 1; }
+    [[ -z "$output_file2" ]] && { echo "[ERROR] output_file2 required for affine application"; return 1; }
+    [[ ! -f "$affine_mat" ]] && { echo "[ERROR] Affine matrix not found: $affine_mat"; return 1; }
+
+    3dAllineate -input "$input_file2" -base "$reference_file" -master "$reference_file" -prefix "$output_file2" -1Dmatrix_apply "$affine_mat" -final linear -verb
+
+    if [[ $? -ne 0 ]]; then
+      echo "[ERROR] Applying affine failed" >&2
+      return 1
+    fi
+
+    echo "[OK] Affine applied → $output_file2"
   fi
 }
 
-# ---- function: process one CSV line number (SANDBOXED in subshell) ----
-process_csv_line() {
-  local line_no="$1"
+smooth_movavg() {
+  local in_file="$1"
+  local out_file="$2"
+  local win_sec_duration="$3"
+  local tr="$4"
 
-  (
-    PRINT_CYAN "=== Processing CSV line $line_no ==="
+  python3 <<EOF
+import numpy as np
+import nibabel as nib
 
-    local parsed
-parsed="$(
-python3 - "$csv_path" "$line_no" <<'PY_PARSE'
-import csv, sys
-US = '\x1f'; path = sys.argv[1]; target = int(sys.argv[2])
-def try_decode(b):
-    for enc in ('utf-8-sig','cp1252','latin-1'):
-        try: return b.decode(enc)
-        except UnicodeDecodeError: continue
-    return b.decode('utf-8', errors='replace')
-with open(path,'rb') as f:
-    for lineno, raw in enumerate(f, start=1):
-        if lineno == target:
-            txt = try_decode(raw)
-            if not raw.strip() or txt.strip(', \t\r\n') == '':
-                sys.stdout.write(''); sys.exit(0)
-            row = next(csv.reader([txt]))
-            row = [(c or '').replace(US, ' ') for c in row]
-            sys.stdout.write(US.join(row)); break
-PY_PARSE
-)"
-    [[ -n "$parsed" ]] || { echo "Selected line $line_no is blank. Skipping."; exit 0; }
+win_sec_duration = float("$win_sec_duration")
+tr = float("$tr")
+in_file = "$in_file"
+out_file = "$out_file"
 
-    local project_name sub_project_name dataset_name structural_name functional_name struc_coregistration baseline_duration injection_duration
-    local injection_on_left_side injection_on_right_side
-    get_n_field(){ echo "$parsed" | cut -d"$DELIM" -f"$1"; }
-    trim(){ printf '%s' "$1" | xargs; }
+win = max(1, int(round(win_sec_duration / tr)))
 
-    project_name=$(trim "$(get_n_field 3)")
-    sub_project_name=$(trim "$(get_n_field 4)")
-    dataset_name=$(trim "$(get_n_field 2)")
-    structural_name=$(trim "$(get_n_field 5)")
-    functional_name=$(trim "$(get_n_field 6)")
-    struc_coregistration=$(trim "$(get_n_field 7)")
-    baseline_duration=$(trim "$(get_n_field 8)")
-    injection_duration=$(trim "$(get_n_field 9)")
-    injection_on_left_side=$(trim "$(get_n_field 22)")
-    injection_on_right_side=$(trim "$(get_n_field 23)")
+def moving_average_1d(x, win):
+    k = np.ones(win, dtype=float) / win
+    xpad = np.pad(x, (win//2, win-1-win//2), mode='edge')
+    return np.convolve(xpad, k, mode='valid')
 
-    export Project_Name="$project_name"
-    export Sub_project_Name="$sub_project_name"
-    export Dataset_Name="$dataset_name"
-    export structural_run="$structural_name"
-    export run_number="$functional_name"
-    export str_for_coreg="$struc_coregistration"
-    export baseline_duration_in_min="$baseline_duration"
-    export injection_duration_in_min="$injection_duration"
-    export injected_liquid_on_left_side="$injection_on_left_side"
-    export injected_liquid_on_right_side="$injection_on_right_side"
+img = nib.load(in_file)
+data = img.get_fdata()
+T = data.shape[-1]
+flat = data.reshape(-1, T)
+sm = np.vstack([moving_average_1d(ts, win) for ts in flat]).reshape(data.shape)
 
-    echo -e "\n== Selection summary =="
-    echo "CSV line:                                 $line_no"
-    echo "Project_Name:                             $Project_Name"
-    echo "Sub_project_Name:                         $Sub_project_Name"
-    echo "Dataset_Name:                             $Dataset_Name"
-    echo "First Structural Run:                     $structural_run"
-    echo "Functional Run Number:                    $run_number"
-    echo "Structural Data used for Coregistration:  $str_for_coreg"
-    echo "Baseline Duration (in min):               $baseline_duration_in_min"
-    echo "Injection Duration (in min):              $injection_duration_in_min"
-    echo "Liquid injected on Left Side:             $injected_liquid_on_left_side"
-    echo "Liquid injected on Right Side:            $injected_liquid_on_right_side"
-
-    local Path_Raw_Data="$root_location/RawData/$project_name/$sub_project_name"
-    local Path_Analysed_Data="$root_location/AnalysedData/$project_name/$sub_project_name/$Dataset_Name"
-
-    local datapath
-    datapath="$(find "$Path_Raw_Data" -type d -name "*${Dataset_Name}*" 2>/dev/null | head -n1 || true)"
-    [[ -n "${datapath:-}" ]] || { echo "ERROR: raw data dir for '$Dataset_Name' not found under $Path_Raw_Data"; exit 1; }
-    echo "Raw dataset path: $datapath"
-
-    echo
-    echo "Analysed Data folder check..."
-    if [[ -d "$Path_Analysed_Data" ]]; then
-      echo "Analysed Data folder exists, Proceeding to Analyse the data"
-    else
-      echo "Creating: $Path_Analysed_Data"
-      mkdir -p "$Path_Analysed_Data"
-    fi
-
-    # ---------------- STRUCTURAL ----------------
-    FUNC_PARAM_EXTRACT "$datapath/$structural_run"
-    : "${SequenceName:?FUNC_PARAM_EXTRACT did not set SequenceName}"
-
-    local struct_dir="$Path_Analysed_Data/${structural_run}${SequenceName}"
-    mkdir -p "$struct_dir"
-    cd "$struct_dir"
-    CHECK_FILE_EXISTENCE "$struct_dir" || true
-
-    run_if_missing "anatomy.nii.gz" -- BRUKER_to_NIFTI "$datapath" "$structural_run" "$datapath/$structural_run/method"
-    cp -f G1_cp.nii.gz anatomy.nii.gz || echo "WARNING: G1_cp.nii.gz not found for structural; continuing."
-    # 3dresample -orient LPI -inset G1_cp.nii.gz -prefix G1_cp.nii.gz -overwrite
-
-
-    # ---------------- STRUCTURAL FOR COREGISTRATION ----------------
-    FUNC_PARAM_EXTRACT "$datapath/$str_for_coreg"
-    : "${SequenceName:?FUNC_PARAM_EXTRACT did not set SequenceName}"
-
-    local struct_coreg_dir="$Path_Analysed_Data/${str_for_coreg}${SequenceName}"
-    mkdir -p "$struct_coreg_dir"
-    cd "$struct_coreg_dir"
-    CHECK_FILE_EXISTENCE "$struct_coreg_dir" || true
-
-    run_if_missing "anatomy.nii.gz" -- BRUKER_to_NIFTI "$datapath" "$str_for_coreg" "$datapath/$str_for_coreg/method"
-    cp -f G1_cp.nii.gz anatomy.nii.gz || echo "WARNING: G1_cp.nii.gz not found for coreg structural; continuing."
-    # 3dresample -orient LPI -inset G1_cp.nii.gz -prefix G1_cp.nii.gz -overwrite
-
-    # ---------------- FUNCTIONAL ----------------
-    FUNC_PARAM_EXTRACT "$datapath/$run_number"
-    : "${SequenceName:?FUNC_PARAM_EXTRACT did not set SequenceName}"
-
-    local func_dir="$Path_Analysed_Data/${run_number}${SequenceName}"
-    mkdir -p "$func_dir"
-    cd "$func_dir"
-    CHECK_FILE_EXISTENCE "$func_dir" || true
-
-    run_if_missing "G1_cp.nii.gz" -- BRUKER_to_NIFTI "$datapath" "$run_number" "$datapath/$run_number/method"
-    # 3dresample -orient LPI -inset G1_cp.nii.gz -prefix G1_cp.nii.gz -overwrite
-
- 
-    # ===============================================================================================
-    #                Step 1: Motion Correction (Using AFNI)
-    PRINT_YELLOW "Performing Step 1: Motion Correction"
-    # ===============================================================================================
-    
-    : "${MiddleVolume:?FUNC_PARAM_EXTRACT (or motion helper) did not set MiddleVolume}"
-    
-    run_if_missing "mc_func.nii.gz" "mc_func+orig.HEAD" "mc_func+orig.BRIK" -- MOTION_CORRECTION "$MiddleVolume" G1_cp.nii.gz mc_func
-
-    
-    # ===============================================================================================
-    #                Step 2: Cleaning the functional data (Masking)
-    PRINT_YELLOW "Performing Step 2: Cleaning the functional data by generating mask"
-    # ===============================================================================================
-    
-    # Steo 2a: Temporal Smoothing of the functional data
-    smooth_movavg mc_func.nii.gz temporal_smoothed_mc_func.nii.gz 60 #temporal smoothing with window size of 60 seconds
-
-    # Step 2b: Always ask for indices; if a map exists, let the user choose reuse vs regenerate
-    fsleyes temporal_smoothed_mc_func.nii.gz
-
-    # Ask the user which volume they want
-    prompt_if_unset base_start "Enter baseline start Volume index"
-    prompt_if_unset base_end   "Enter baseline end Volume index"
-    prompt_if_unset sig_start "Enter Signal start Volume index"
-    prompt_if_unset sig_end   "Enter Signal end Volume index"
-
-
-    find_and_copy_masks
-
-    3dTstat -mean -prefix "mean_baseline_image_${base_start}_to_${base_end}.nii.gz" "temporal_smoothed_mc_func.nii.gz[${base_start}..${base_end}]"
-    
-    if [ -f mask_mean_mc_func.nii.gz ]; then
-      echo "Mask Image exists."
-    else
-      PRINT_RED "Mask Image does not exist. Please create the mask and save it as mask_mean_mc_func.nii.gz"
-      fsleyes mean_baseline_image_${base_start}_to_${base_end}.nii.gz
-    fi
-    
-    rm -f mean_baseline_image_${base_start}_to_${base_end}.nii.gz # removing a file that is not needed further
-    fslmaths temporal_smoothed_mc_func.nii.gz -mas mask_mean_mc_func.nii.gz cleaned_mc_func.nii.gz
-    
-
-    # ===============================================================================================
-    #                Step 3: tSNR Estimation (Using AFNI)
-    PRINT_YELLOW "Performing Step 3: Obtaining Mean func, Std func and tSNR Maps"
-    # ===============================================================================================
-    
-    run_if_missing "tSNR_mc_func.nii.gz" "tSNR_mc_func+orig.HEAD" "tSNR_mc_func+orig.BRIK" -- TEMPORAL_SNR_using_FSL cleaned_mc_func.nii.gz
-
-
-    # ===============================================================================================
-    #                Step 4: Generating Baseline Image and Creating Masks
-    PRINT_YELLOW "Performing Step 4: Generating Baseline Image and Creating Masks"
-    # ===============================================================================================
-    
-    
-
-    #Step 4a: Generating Baseline Image by applying smoorthing on cleaned functional data
-    rm -f baseline_image_*.nii.gz signal_image_*.nii.gz Static_Map_*.nii.gz Static_Map_coreg.nii.gz
-    fslmaths cleaned_mc_func.nii.gz -s 0.20 smoothed_cleaned_mc_func.nii.gz  #spatially smoothing functional data for better static map generation
-    
-
-
-    PRINT_YELLOW "Performing Step 4a: Generating Baseline and Signal Image"
-    3dTstat -mean -prefix "signal_image_${sig_start}_to_${sig_end}.nii.gz" "smoothed_cleaned_mc_func.nii.gz[${sig_start}..${sig_end}]"
-    3dTstat -mean -prefix "baseline_image_${base_start}_to_${base_end}.nii.gz" "smoothed_cleaned_mc_func.nii.gz[${base_start}..${base_end}]"
-  
-    # Step 4b: Generating Static Maps
-    fslmaths signal_image_${sig_start}_to_${sig_end}.nii.gz \
-        -sub baseline_image_${base_start}_to_${base_end}.nii.gz \
-        -div baseline_image_${base_start}_to_${base_end}.nii.gz \
-        -mul 100 \
-        tmp_signal_change_map_${base_start}_to_${base_end}_and_${sig_start}_to_${sig_end}.nii.gz
-
-    fslmaths tmp_signal_change_map_${base_start}_to_${base_end}_and_${sig_start}_to_${sig_end}.nii.gz -mas mask_mean_mc_func.nii.gz signal_change_map_${base_start}_to_${base_end}_and_${sig_start}_to_${sig_end}.nii.gz
-    
-    # Step 4c: Normalising Entire Time Series to estiamte Percent Signal Change
-    fslmaths smoothed_cleaned_mc_func.nii.gz \
-        -sub baseline_image_${base_start}_to_${base_end}.nii.gz \
-        -div baseline_image_${base_start}_to_${base_end}.nii.gz \
-        -mul 100 \
-        tmp_norm_cleaned_mc_func.nii.gz
-    
-    fslmaths tmp_norm_cleaned_mc_func.nii.gz -mas mask_mean_mc_func.nii.gz norm_cleaned_mc_func.nii.gz
-
-    rm -f tmp_signal_change_map_${base_start}_to_${base_end}_and_${sig_start}_to_${sig_end}.nii.gz tmp_norm_cleaned_mc_func.nii.gz
-
-    # ===============================================================================================
-    #                Step 5: Coregistration (Using AFNI)
-    PRINT_YELLOW "Performing Step 5: Coregistration of functional/static map to structural"
-    # ===============================================================================================
-    
-    # Step 5a: Cleaning the structural image by masking it with a manually created mask
-   
-    if [[ -f $struct_coreg_dir/cleaned_anatomy.nii.gz ]]; then
-      echo "Cleaned Anatomy Image exists."
-    else
-      PRINT_RED "Cleaned Anatomy does not exist. Please create the mask and save it as mask_anatomy.nii.gz"
-      fsleyes "$struct_coreg_dir/anatomy.nii.gz"
-      fslmaths $struct_coreg_dir/anatomy.nii.gz -mas $struct_coreg_dir/mask_anatomy.nii.gz $struct_coreg_dir/cleaned_anatomy.nii.gz
-    fi
-
-    # Step 5b: Creating a mask image that includes cannulas as well
-    fslmaths mc_func.nii.gz -Tmean tmp_mean_mc_func.nii.gz #create temporary mean functional image
-    
-    if [ -f mask_mean_mc_func_cannulas.nii.gz ]; then
-      echo "Mask Image exists."
-    else
-      cp mask_mean_mc_func.nii.gz mask_mean_mc_func_cannulas.nii.gz #copy original mask to a new file to be edited that includes cannulas
-      PRINT_RED "Please edit the mask_mean_mc_func_cannulas.nii.gz to include cannulas and save it."
-      fsleyes mask_mean_mc_func_cannulas.nii.gz tmp_mean_mc_func.nii.gz #open in fsleyes for editing
-    fi
-
-  
-    fslmaths tmp_mean_mc_func.nii.gz -mas mask_mean_mc_func_cannulas.nii.gz cleaned_mean_mc_func_cannulas.nii.gz #create cleaned mean functional image including cannulas
-    rm -f tmp_mean_mc_func.nii.gz #remove temporary file
-
-    #NOTE: Step 5c coregisters the static map created on functional data to structural image where as 
-    # Step 5d coregisters only the functional data to structural image and creates a coregistered functional time series and a signal change map from that coregistered functional time series.
-
-    # Step 5c: Coregistering the mean functional image to structural image and saving the affine matrix
-    if [[ -f mean_func_struct_aligned.aff12.1D ]]; then
-      PRINT_GREEN "Affine Matrix to coregister Signal Change Map exists."
-    else
-      PRINT_RED "Affine Matrix to coregister Signal Change Map doesn not exist. 3dAllineate will be used to coregister the mean functional image to structural image now."
-      3dAllineate \
-      -base $struct_coreg_dir/cleaned_anatomy.nii.gz \
-      -input cleaned_mean_mc_func_cannulas.nii.gz \
-      -1Dmatrix_save mean_func_struct_aligned.aff12.1D \
-      -cost lpa \
-      -prefix mean_func_struct_aligned.nii.gz \
-      -1Dparam_save params.1D \
-      -twopass
-    fi
-
-    if [[ -f Static_Map_coreg.nii.gz ]]; then
-      PRINT_GREEN "Coregistered Static Map exists."
-    else
-      PRINT_RED "Static Map to be coregistered does not exist. 3dAllineate will be used to coregister the Static Map to structural image now."
-      3dAllineate \
-        -base "$struct_coreg_dir/cleaned_anatomy.nii.gz" \
-        -input "signal_change_map_${base_start}_to_${base_end}_and_${sig_start}_to_${sig_end}.nii.gz" \
-        -1Dmatrix_apply mean_func_struct_aligned.aff12.1D \
-        -master "$struct_coreg_dir/cleaned_anatomy.nii.gz" \
-        -final linear \
-        -prefix signal_change_map_coregistered_structural_space.nii.gz
-
-    fi
-
-    #Step 5d: Coregistering the motion corrected functional data to structural image using the saved affine matrix
-    if [[ -f sm_fMRI_coregistered_to_struct.nii.gz ]]; then
-      PRINT_GREEN "Coregistered functional data exists."
-    else
-      PRINT_RED "Coregistered functional data does not exist. 3dAllineate will be used to coregister the functional data to structural image now."
-      scm_coregsitered_functional smoothed_cleaned_mc_func.nii.gz "$struct_coreg_dir/cleaned_anatomy.nii.gz" "$base_start" "$base_end" "$sig_start" "$sig_end"
-    fi
-    
-    fslmaths signal_change_map_coregistered_structural_space.nii.gz -mas mask_mean_fMRI_coregistered_to_struct.nii.gz cleaned_signal_change_map_coregistered_structural_space.nii.gz
-    PRINT_GREEN "cleaned_signal_change_map_coregistered_structural_space.nii.gz is the Signal Change Map generated from functional data and coregistered to structural image."
-
-    fslmaths sm_coreg_func_Static_Map*.nii.gz -mas mask_mean_fMRI_coregistered_to_struct.nii.gz cleaned_sm_cleaned_coreg_func_Static_Map.nii.gz
-    PRINT_GREEN "cleaned_sm_cleaned_coreg_func_Static_Map is the Signal Change Map generated from coregistered functional data to structural image."
-
-    # ===============================================================================================
-    #                Step 6: Performing ROI Analysis
-    PRINT_YELLOW "Performing Step 6: Performing ROI Analysis"
-    # ===============================================================================================
-    
-
-    #Marking and saving Pattern of ROIs+
-  
-    PRINT_RED "Please create ROIs on the functional time series and save them in the following particular format:"
-    echo ""
-    PRINT_YELLOW "roi_{what protein/aav is there}_{is it direct injection or aav}_{analyte injeted}_{hemisphere side}.nii.gz"
-    PRINT_YELLOW "For Example: if GCaMP6f is directly injected in the left hemisphere and dopamine is injected in the right hemisphere following a viral injection, then the following ROIs should be created:"
-    echo ""
-    PRINT_RED "roi_GCaMP6f_direct_left.nii.gz or roi_dopamine_aav_right.nii.gz"
-    echo ""
-
-    #Convert smoothed coregistered functional data to percent signal change
-    # 3dTstat -mean -prefix "tmp_sm_coreg_func_baseline_image_${base_start}_to_${base_end}.nii.gz" "sm_fMRI_coregistered_to_struct.nii.gz[${base_start}..${base_end}]"
-
-    
-    fsleyes mean_cleaned_mc_func.nii.gz signal_change_map_${base_start}_to_${base_end}_and_${sig_start}_to_${sig_end}.nii.gz norm_cleaned_mc_func.nii.gz smoothed_cleaned_mc_func.nii.gz
-    
-    for roi in roi_*.nii.gz; do
-      
-      fslmeants -i norm_cleaned_mc_func.nii.gz -m "$roi" -o "psc_${roi%.nii.gz}.txt"
-      
-    done
-    
-    echo "✔ Completed pipeline for CSV line $line_no."
-
-    move_results
-
-  )
+nib.Nifti1Image(sm, img.affine, img.header).to_filename(out_file)
+print(f"Wrote: {out_file}  (tr={tr}s, window={win_sec_duration}s => {win} vols)")
+EOF
 }
-# ---- iterate over all selected lines (each in its own subshell) ----
-for ln in "${LINES[@]}"; do
-  process_csv_line "$ln"
+
+
+roi_analysis() {
+
+  local func_in_file="$1"
+  local roi_file="$2"
+  local base_start="$3"
+  local base_end="$4"
+  local sig_start="$5"
+  local sig_end="$6"
+  local TR="$7"
+
+  local tc_file="time_course_${roi_file%.nii.gz}.txt"
+  local psc_file="PSC_time_series_${roi_file%.nii.gz}.txt"
+  local graph_file="PSC_Time_Series_${roi_file%.nii.gz}.svg"
+
+  echo "[INFO] Processing ROI: $roi_file" >&2
+
+  # ---- Time course extraction ----
+  fslmeants -i "$func_in_file" -m "$roi_file" -o "$tc_file" || return 1
+  echo "[OK] Time course saved → $tc_file" >&2
+
+  # ---- Baseline mean (FIXED: 0-based → 1-based indexing) ----
+  baseline=$(awk -v s="$base_start" -v e="$base_end" '
+    NR >= (s+1) && NR <= e {sum+=$1; n++}
+    END { if (n>0) print sum/n; else print "nan" }' "$tc_file")
+
+  if [[ "$baseline" == "nan" || "$baseline" == "0" || -z "$baseline" ]]; then
+    echo "[ERROR] Invalid baseline ($baseline) for $roi_file" >&2
+    return 1
+  fi
+
+  echo "[DEBUG] Baseline = $baseline" >&2
+
+  # ---- Percent Signal Change ----
+  awk -v b="$baseline" '{print (($1-b)/b)*100}' "$tc_file" > "$psc_file"
+  echo "[OK] PSC calculated → $psc_file" >&2
+
+  # ---- Mean PSC in signal window (FIXED indexing) ----
+  mean_signal=$(awk -v s="$sig_start" -v e="$sig_end" '
+    NR >= (s+1) && NR <= e {sum+=$1; n++}
+    END { if (n>0) print sum/n; else print "nan" }' "$psc_file")
+
+  # ---- LIVE TERMINAL PLOT ----
+  echo "[INFO] Live PSC plot (terminal)" >&2
+  gnuplot << EOF
+set terminal dumb size 120,30
+set title "LIVE PSC – $roi_file"
+set xlabel "Time (minutes)"
+set ylabel "PSC (%)"
+set grid
+plot "$psc_file" using (\$0*$TR/60.0):1 with lines title "PSC"
+EOF
+
+  # ---- SVG PLOT ----
+  gnuplot << EOF
+set terminal svg size 900,400
+set output "$graph_file"
+set title "Percent Signal Change – $roi_file"
+set xlabel "Time (minutes)"
+set ylabel "Signal Change (%)"
+set grid
+
+set style rect fc rgb "green" fs solid 0.2 noborder
+set object rect from ($base_start*$TR/60.0), graph 0 \
+                 to ($base_end*$TR/60.0), graph 1
+
+set style rect fc rgb "blue" fs solid 0.2 noborder
+set object rect from ($sig_start*$TR/60.0), graph 0 \
+                 to ($sig_end*$TR/60.0), graph 1
+
+plot "$psc_file" using (\$0*$TR/60.0):1 with lines lw 2 title "PSC"
+EOF
+
+  echo "[OK] SVG saved → $graph_file" >&2
+
+  # ---- RETURN VALUE ----
+  echo "$mean_signal"
+}
+
+## Helper functions
+
+func_param_extract() {
+
+  local scan_dir="$1"
+  local export_env="${2:-true}"
+
+  local acqp_file="$scan_dir/acqp"
+  local method_file="$scan_dir/method"
+
+  # -----------------------------
+  # File checks
+  # -----------------------------
+  if [[ ! -f "$acqp_file" || ! -f "$method_file" ]]; then
+    echo "❌ acqp or method file not found in $scan_dir" >&2
+    return 1
+  fi
+
+  # -----------------------------
+  # Extract Sequence Name
+  # -----------------------------
+  SequenceName=$(sed -nE \
+    's/.*ACQ_protocol_name=\([[:space:]]*64[[:space:]]*\)[[:space:]]*<([^>]+)>.*/\1/p' \
+    "$acqp_file")
+
+  # -----------------------------
+  # Helper to extract numeric values
+  # -----------------------------
+  extract_val() {
+    local pattern="$1"
+    local file="$2"
+    grep -oE "$pattern" "$file" | grep -oE '[0-9]+'
+  }
+
+  NoOfRepetitions=$(extract_val '##\$PVM_NRepetitions=[[:space:]]*[0-9]+' "$method_file")
+  TotalScanTime=$(extract_val '##\$PVM_ScanTime=[[:space:]]*[0-9]+' "$method_file")
+
+  Baseline_TRs=$(extract_val 'PreBaselineNum=[[:space:]]*[0-9]+' "$method_file")
+  StimOn_TRs=$(extract_val 'StimNum=[[:space:]]*[0-9]+' "$method_file")
+  StimOff_TRs=$(extract_val 'InterStimNum=[[:space:]]*[0-9]+' "$method_file")
+  NoOfEpochs=$(extract_val 'NEpochs=[[:space:]]*[0-9]+' "$method_file")
+
+  # -----------------------------
+  # Derived values
+  # -----------------------------
+  VolTR_msec=""
+  VolTR=""
+  MiddleVolume=""
+
+  if [[ -n "$NoOfRepetitions" && -n "$TotalScanTime" ]]; then
+    VolTR_msec=$(echo "scale=4; $TotalScanTime / $NoOfRepetitions" | bc)
+    VolTR=$(echo "scale=4; $VolTR_msec / 1000" | bc)
+    MiddleVolume=$(echo "scale=2; $NoOfRepetitions / 2" | bc)
+  fi
+
+  # -----------------------------
+  # Export to environment (optional)
+  # -----------------------------
+  if [[ "$export_env" == "true" ]]; then
+    export SequenceName
+    export NoOfRepetitions
+    export TotalScanTime
+    export VolTR_msec
+    export VolTR
+    export Baseline_TRs
+    export StimOn_TRs
+    export StimOff_TRs
+    export NoOfEpochs
+    export MiddleVolume
+  fi
+
+  # -----------------------------
+  # Print key=value (like return)
+  # -----------------------------
+  cat <<EOF
+SequenceName=$SequenceName
+NoOfRepetitions=$NoOfRepetitions
+TotalScanTime=$TotalScanTime
+VolTR_msec=$VolTR_msec
+VolTR=$VolTR
+Baseline_TRs=$Baseline_TRs
+StimOn_TRs=$StimOn_TRs
+StimOff_TRs=$StimOff_TRs
+NoOfEpochs=$NoOfEpochs
+MiddleVolume=$MiddleVolume
+EOF
+}
+
+is_step_enabled() {
+  local key="$1"
+  echo "$SELECTED_STEPS" | grep -qw "$key"
+}
+
+
+# ======================================================================
+# Terminal safety (CRITICAL)
+# ======================================================================
+
+# ======================================================================
+# Asking what steps need to be executed
+# ======================================================================
+
+PIPELINE_STEPS=(
+  "bruker_to_nifti|Bruker → NIfTI|on"
+  "motion_correction|Motion Correction|on"
+  "smooth_movavg|Temporal Smoothing (MovAvg)|on"
+  "spatial_smoothing|Spatial Smoothing|on"
+  "masking_file|Masking|on"
+  "tSNR|Temporal SNR Estimation|on"
+  "signal_change_map|Signal Change Map|on"
+  "roi_analysis|ROI Analysis|on"
+  "coregistration_afni|Coregistration (AFNI)|off"
+)
+
+DIALOG_ARGS=()
+for step in "${PIPELINE_STEPS[@]}"; do
+  IFS="|" read -r key label default <<< "$step"
+  DIALOG_ARGS+=("$key" "$label" "$default")
 done
 
+printf '\e[?1l\e>'   # reset keypad mode before dialog
+
+SELECTED=$(dialog \
+  --clear \
+  --backtitle "Neuroimaging Pipeline" \
+  --title "Pipeline Step Selection" \
+  --checklist "Select preprocessing steps to run:" \
+  20 80 12 \
+  "${DIALOG_ARGS[@]}" \
+  3>&1 1>&2 2>&3)
+
+STATUS=$?
+reset_terminal
+
+if [[ $STATUS -ne 0 ]]; then
+  echo "Pipeline selection cancelled."
+  exit 1
+fi
+
+SELECTED_STEPS=$(echo "$SELECTED" | tr -d '"')
+
+echo "✔ Selected pipeline steps:"
+for step in $SELECTED_STEPS; do
+  echo "• $step"
+done
 echo
-echo "All requested CSV lines processed."
+
+# ======================================================================
+# Selecting raw data folder
+# ======================================================================
+
+root_location="/Users/njain/Desktop/test"
+
+printf '\e[?1l\e>'   # reset keypad mode before dialog
+
+in_path=$(dialog \
+  --clear \
+  --no-shadow \
+  --title "Select Raw Data Folder" \
+  --dselect "$root_location/" 18 90 \
+  3>&1 1>&2 2>&3)
+
+STATUS=$?
+reset_terminal
+
+if [[ $STATUS -ne 0 ]]; then
+  echo "❌ Folder selection cancelled."
+  exit 1
+fi
+
+# Normalize path
+[[ "$in_path" != */ ]] && in_path="${in_path}/"
+
+if [[ ! -d "$in_path" ]]; then
+  echo "❌ Invalid directory selected."
+  exit 1
+fi
+
+echo "✔ Raw data folder selected:"
+echo "  $in_path"
+echo
+
+## Final summary about the functions selected here
+
+echo "======================================"
+echo "✔ Pipeline Configuration Summary"
+echo "======================================"
+echo "Raw Data Path : $in_path"
+echo
+echo "Selected Steps:"
+echo "--------------------------------------"
+for step in $SELECTED_STEPS; do
+  echo "• $step"
+done
+echo "======================================"
 
 
-# ===============================================================================================
-    #                Step 7: Performing Group Data Analysis for Time Course Extraction
-PRINT_YELLOW "Performing Step 7: Performing Group Data Analysis for Time Course Extraction"
-# ===============================================================================================
+# ==============================================================================================================================================================================================================
+# Creating and assigning directories to the variable
+# ==============================================================================================================================================================================================================
 
-python3 Group_data_Analysis.py $root_location/AnalysedData/$project_name/$sub_project_name --tr 1.0 --movmean 120 --verbose
+## Using dialog box here, you enter the scan parameters and the values needed for analysis
+
+FORM_VALUES=$(dialog \
+  --clear \
+  --title "Scan Parameters" \
+  --form "Enter scan parameters:" \
+  22 110 7 \
+  "Structural Scan Number:"                                     1  1 "10"   1  50 10 0 \
+  "Functional Scan Number:"                                     2  1 "1"    2  50 10 0 \
+  "Window Duration (in vols):"                                  3  1 "100"  3  50 10 0 \
+  "Temporal Smooth (in vols):"                                  4  1 "60"   4  50 10 0 \
+  "Spatial Smoothing for Functional Data (num of voxels):"      5  1 "300"  5  50 10 0 \
+  "Spatial Smoothing for Coregistered Data (num of voxels):"    6  1 "300"  6  50 10 0 \
+  3>&1 1>&2 2>&3)
+
+
+
+#### below piece of code is added to ensure terminal safety even if dialog is exited without entering values i.e. being cancalled ####
+STATUS=$?
+reset_terminal
+
+if [[ $STATUS -ne 0 ]]; then
+  echo "❌ Parameter entry cancelled."
+  exit 1
+fi
+
+## Parse dialog output CORRECTLY (multi-line safe) ##
+
+mapfile -t FORM_ARRAY <<< "$FORM_VALUES" # mapfile reads lines into an array and works only with bash v4.0 and above
+
+struct_scan_number="${FORM_ARRAY[0]}"
+func_scan_number="${FORM_ARRAY[1]}"
+win_vol="${FORM_ARRAY[2]}"
+temp_smooth_factor="${FORM_ARRAY[3]}"
+func_smooth_factor="${FORM_ARRAY[4]}"
+coreg_smooth_factor="${FORM_ARRAY[5]}"
+
+
+#### Getting subject ID ####
+subject_id=$(awk '/^<.*>$/ {gsub(/[<>]/,""); print; exit}' "${in_path}/subject")
+
+
+echo "Data is analysed for ${subject_id} for Functional Scan Number: ${func_scan_number} and Structural Scan Number: ${struct_scan_number} and a termporal smoothing of ${temp_smooth_factor} vols and spatial smoothing of ${func_smooth_factor} for functional data and ${coreg_smooth_factor} for coregistered data is applied."
+## Setting up path and assigning locations to variables
+
+path_raw_struct="${in_path}/${struct_scan_number}"  # Path for raw structural data
+path_raw_func="${in_path}/${func_scan_number}"  # Path for raw functional data
+
+sequence_name_struct=$(func_param_extract "$path_raw_struct" false | grep '^SequenceName=' | cut -d= -f2)
+sequence_name_func=$(func_param_extract "$path_raw_func" false | grep '^SequenceName=' | cut -d= -f2)
+
+## Setting up path for storing analysed data overall, strucutral data, functional data and processed functional data
+
+#### Below piece of code replaced RawData with AnalysedData in the input path to create analysed data path ####
+analysed_path="$(dirname "${in_path/RawData/AnalysedData}")/$subject_id"
+
+#### Structural and Functional data analysed data directories ####
+analysed_struct_dir=${analysed_path}/${struct_scan_number}${sequence_name_struct}
+analysed_func_dir=${analysed_path}/${func_scan_number}${sequence_name_func}
+
+#### processed functional data ####
+timestamp="$(date +"%Y_%m_%d_%H%M%S")"
+user="$(whoami)"
+folder_created="${timestamp}_${user}"
+analysis_func_subdir="${analysed_func_dir}/${folder_created}"
+if [[ -e "$analysis_func_subdir" ]]; then
+  echo "❌ Analysis directory already exists:"
+  echo "   $analysis_func_subdir"
+  exit 1
+fi
+mkdir -p "$analysis_func_subdir"
+
+
+# src_dir = Path.cwd()
+
+#### PSQL-style table header ####
+
+printf "+----+----------------------------------------------+---------------------------+------------------------------------------------------------+\n"
+printf "| %-2s | %-44s | %-25s | %-58s |\n" "ID" "Purpose" "Variable Name" "Value"
+printf "+----+----------------------------------------------+---------------------------+------------------------------------------------------------+\n"
+
+
+printf "| %-2s | %-44s | %-25s | %-58s |\n" "a" "Location of all Raw Data"                      "root_location"        "$root_location"
+printf "| %-2s | %-44s | %-25s | %-58s |\n" "b" "Location of Raw Data to be analysed"           "in_path"              "$in_path"
+printf "| %-2s | %-44s | %-25s | %-58s |\n" "c" "Location of Raw Structural Data"               "path_raw_struct"      "$path_raw_struct"
+printf "| %-2s | %-44s | %-25s | %-58s |\n" "d" "Location of Raw Functional Data"               "path_raw_func"        "$path_raw_func"
+printf "| %-2s | %-44s | %-25s | %-58s |\n" "e" "Location of analysed structural data"          "analysed_struct_dir"  "$analysed_struct_dir"
+printf "| %-2s | %-44s | %-25s | %-58s |\n" "f" "Location of analysed functional data"          "analysed_func_dir"    "$analysed_func_dir"
+printf "| %-2s | %-44s | %-25s | %-58s |\n" "g" "Location of final processed functional data"   "analysis_func_subdir" "$analysis_func_subdir"
+
+printf "+----+----------------------------------------------+---------------------------+------------------------------------------------------------+\n"
+
+
+echo "For your information: all generated files after processing stored in the directory will be utilising the below nomenclature:"
+
+echo "After applying motion correction, file will be saved as mc_input_file"
+echo "After applying temporal smoothing, file will be saved as ts_input_file"
+echo "After applying spatial smoothing, file will be saved as sm_input_file"
+echo "After applying temporal smoothing, file will be saved as ts_input_file"
+echo "After applying temporal SNR, file will be saved as tsnr_input_file"
+
+
+
+# ==============================================================================================================================================================================================================
+# Converting Structural Data into NIFTI and Processing Structural Data
+# ==============================================================================================================================================================================================================
+
+## Converting Structural Data into NIFTI ##
+cd ${analysed_struct_dir}
+
+if is_step_enabled "bruker_to_nifti"; then
+    echo "Converting Bruker to NIFTI: Structural Data"
+    
+    nifti_file_name="struct.nii.gz"
+    if [[ -f "$nifti_file_name" ]]; then
+        echo "✔ NIfTI file already exists: $nifti_file_name"
+    else
+        bruker_to_nifti ${in_path} ${struct_scan_number} struct.nii.gz
+
+    fi
+    ## Cleaning the structural image by masking it with a manually created mask ##
+
+    cleaned_struct_file_name="cleaned_struct.nii.gz"
+
+    if is_step_enabled "masking_file"; then
+        echo "Cleaning the structural image by manually creating mask"
+        
+        if [[ -f ${cleaned_struct_file_name} ]]; then
+            echo "✔ Structural Image for Coregistration exists."
+        else
+            masking_file struct.nii.gz ${cleaned_struct_file_name} || exit 1
+        fi
+        structural_file_for_coregistration="${analysed_struct_dir}/cleaned_struct.nii.gz"    
+    else
+        echo "⏭️ Masks not generated, will not get cleaned data in further pipeline"    
+        structural_file_for_coregistration="${analysed_struct_dir}/struct.nii.gz"    
+    fi
+else
+    echo "⏭️ Data Conversion Step not executed, may not have data in further pipeline"
+fi
+
+
+# ==============================================================================================================================================================================================================
+# Converting Functional Data into NIFTI and Processing Functional Data
+# ==============================================================================================================================================================================================================
+
+## Converting Functional Data into NIFTI ##
+cd ${analysed_func_dir}
+
+if is_step_enabled "bruker_to_nifti"; then
+    echo "Converting Bruker to NIFTI: Functional Data"
+    
+    nifti_file_name="func.nii.gz"
+    if [[ -f "$nifti_file_name" ]]; then
+        echo "✔ NIfTI file already exists: $nifti_file_name"
+    else
+        bruker_to_nifti ${in_path} ${func_scan_number} func.nii.gz
+    fi
+else
+    echo "⏭️ Data Conversion Step not executed, may not have data in further pipeline"
+fi
+
+input_name_for_next_step="func"
+# ==============================================================================================================================================================================================================
+# Generating Masks
+# ==============================================================================================================================================================================================================
+
+## Extracting functional parameters needed for to extract middle volume ##
+n_vols=$(func_param_extract "$path_raw_func" false | grep '^NoOfRepetitions=' | cut -d= -f2)
+tr=$(func_param_extract "$path_raw_func" false | grep '^VolTR=' | cut -d= -f2)
+middle_vol=$(func_param_extract "$path_raw_func" false | grep '^MiddleVolume=' | cut -d= -f2)
+
+## Extracted middle volume for generating masks and for motion correction ##
+extract_middle_volume ${input_name_for_next_step} "middle_vol.nii.gz" ${middle_vol}
+
+mask_name_wo_cannulas="mask_func.nii.gz"
+mask_name_with_cannulas="mask_func_with_cannulas.nii.gz"
+
+## Generating masks for cleaning the data ##
+if is_step_enabled "masking_file"; then
+    echo "Generating masks for functional data"
+
+    if [[ -f ${mask_name_wo_cannulas} && -f ${mask_name_with_cannulas} ]]; then
+        echo "✔ Mask file for functional data exists."
+    else
+        echo "Create and save masks using fsleyes now and save them as ${mask_name_wo_cannulas} and ${mask_name_with_cannulas}"
+        fsleyes "middle_vol.nii.gz"
+    fi
+
+    fslmaths middle_vol.nii.gz -mas ${mask_name_with_cannulas} "cleaned_middle_vol.nii.gz"
+    mean_image_for_coregistration="cleaned_middle_vol.nii.gz"
+else
+    echo "⏭️ Masks not generated, will not have cleaned data in further pipeline"
+    mean_image_for_coregistration="middle_vol.nii.gz"    
+fi
+
+
+# ==============================================================================================================================================================================================================
+# Applying Motion Correction on raw functional data and plotting motion parameters
+# ==============================================================================================================================================================================================================
+
+if is_step_enabled "motion_correction"; then
+     echo "Applying Motion Correction on raw functional data and plotting motion parameters"
+
+    if [[ -f "mc_${input_name_for_next_step}.nii.gz" ]]; then
+        echo "✔ Motion Corrected functional data exists. Skipping motion correction."
+    else
+        motion_correction "middle_vol.nii.gz" "${input_name_for_next_step}.nii.gz" "mc_${input_name_for_next_step}"
+    fi
+
+    input_name_for_next_step="mc_${input_name_for_next_step}"
+else
+    echo "⏭️ Motion Correction not executed"
+fi
+# ==============================================================================================================================================================================================================
+# Move into further subdirectory with in analysed data folder as well
+# ==============================================================================================================================================================================================================
+
+cd ${analysis_func_subdir}
+cp ../${input_name_for_next_step}.nii.gz ./
+
+#### Copying mask files into the working directory for later use ####
+for f in ../mask_func.nii.gz ../mask_func_with_cannulas.nii.gz; do
+  if [[ -f "$f" ]]; then
+    cp "$f" ./
+  fi
+done
+
+# ==============================================================================================================================================================================================================
+# Applying temporal smoothing to the motion corrected functional data to see the temporal signatures
+# ==============================================================================================================================================================================================================
+
+## Applying temporal smoothing to the motion corrected functional data to see the temporal signatures ##
+if is_step_enabled "smooth_movavg"; then
+    echo "Applying temporal smoothing to the motion corrected functional data to see the temporal signatures"
+    smooth_movavg "${input_name_for_next_step}.nii.gz" "ts_${input_name_for_next_step}.nii.gz" "${temp_smooth_factor}" "${tr}"
+
+    if is_step_enabled "masking_file"; then
+        echo "Cleaning the temporally smoothed motion-corrected functional data by applying mask"
+        
+        cleaned_ts_func_file_name="cleaned_ts_${input_name_for_next_step}.nii.gz"
+
+        if [[ -f ${cleaned_ts_func_file_name} ]]; then
+            echo "✔ Temporally Smoothed Motion Corrected Functional Image for further analysis exists."
+        else
+            masking_file "ts_${input_name_for_next_step}.nii.gz" ${cleaned_ts_func_file_name} || exit 1
+        fi
+    else
+        echo "⏭️ Masks not generated, will not get cleaned data in further pipeline"    
+    fi
+
+    input_name_for_next_step="ts_${input_name_for_next_step}"    
+else
+    echo "⏭️ Temporal Smoothing not executed"
+fi
+
+
+## Based on the temporal smoothing, selecting baseline and signal volumes ##
+echo "Choose your baseline and signal volumes from the temporally smoothed motion-corrected functional data."
+fsleyes "${input_name_for_next_step}.nii.gz"
+idx_vals=$(dialog \
+  --clear \
+  --title "Baseline / Signal Selection" \
+  --form "Enter volume indices:" \
+  10 60 2 \
+  "Baseline Start Index:" 1 1 "10" 1 30 10 0 \
+  "Signal Start Index:"   2 1 "10" 2 30 10 0 \
+  3>&1 1>&2 2>&3
+)
+
+mapfile -t idx_vals <<< "$idx_vals"
+
+base_start_idx="${idx_vals[0]}"
+sig_start_idx="${idx_vals[1]}"
+
+base_end_idx=$((base_start_idx + win_vol))
+sig_end_idx=$((sig_start_idx + win_vol))
+
+echo "Baseline Start Index : $base_start_idx to $base_end_idx"
+echo "Signal Start Index   : $sig_start_idx to $sig_end_idx"
+
+# ==============================================================================================================================================================================================================
+# tSNR estimation
+# ==============================================================================================================================================================================================================
+
+if is_step_enabled "tSNR"; then
+    echo "Computing Temporal SNR on the temporally smoothed motion-corrected functional data "
+    tSNR "${input_name_for_next_step}.nii.gz"
+else
+    echo "⏭️ Temporal SNR not executed"
+
+fi
+# ==============================================================================================================================================================================================================
+# Applying spatial smoothing
+# ==============================================================================================================================================================================================================
+
+## Applying spatial smoothing to the temporally smoothed motion-corrected functional data ##
+
+if is_step_enabled "spatial_smoothing"; then
+    echo "Applying spatial smoothing to the temporally smoothed motion-corrected functional data"
+    
+    dim_inplane=$(fslhd "${input_name_for_next_step}.nii.gz" | awk '/^pixdim1/ {print $2}')
+
+    sigma_val=$(echo "scale=6; ($func_smooth_factor * $dim_inplane) / 2.3548" | bc)
+
+    fslmaths "${input_name_for_next_step}.nii.gz" -s ${sigma_val} "sm_${input_name_for_next_step}.nii.gz"
+    
+    if is_step_enabled "masking_file"; then
+        echo "Cleaning the spatially smoothed temporally smoothed motion-corrected functional data by applying mask"
+        
+        func_file_name_for_scm="cleaned_sm_${input_name_for_next_step}.nii.gz"
+
+        if [[ -f ${func_file_name_for_scm} ]]; then
+            echo "✔ Spatially Smoothed Temporally Smoothed Motion Corrected Functional Image for further analysis exists."
+        else
+            fslmaths "sm_${input_name_for_next_step}.nii.gz" -mas ${mask_name_with_cannulas} ${func_file_name_for_scm}
+        fi
+    else
+        echo "⏭️ Masks not generated, will not get cleaned data in further pipeline"   
+        func_file_name_for_scm="sm_${input_name_for_next_step}.nii.gz" 
+    fi
+
+    input_name_for_next_step="sm_${input_name_for_next_step}"
+    
+else
+    echo "⏭️ Spatial Smoothing not executed, signal change maps may be noisy"
+fi
+
+
+# ----------------------------------------------------------
+# 🔐 SAFETY FALLBACK 
+# ----------------------------------------------------------
+if [[ -z "${func_file_name_for_scm:-}" ]]; then
+  func_file_name_for_scm="${input_name_for_next_step}.nii.gz"
+fi
+
+
+
+# ==============================================================================================================================================================================================================
+# Generating Signal Change Maps and Signal Change Time Series
+# ==============================================================================================================================================================================================================
+
+## Generating Signal Change Maps and Signal Change Time Series ##
+
+if is_step_enabled "signal_change_map"; then
+
+    echo "Generating Signal Change Map and Signal Change Time Series"
+    signal_change_map "${func_file_name_for_scm}" "$base_start_idx" "$base_end_idx" "$sig_start_idx" "$sig_end_idx" scm_mc_func
+
+
+    ## Cleaning the Signal Change Map and Signal Change Time Series by applying mask ##
+    if is_step_enabled "masking_file"; then
+        echo "Cleaning the Signal Change Map and Signal Change Time Series by applying mask"
+        
+        cleaned_scm_file_name="cleaned_scm_mc_func.nii.gz"
+        cleaned_scm_ts_file_name="cleaned_time_series_scm_mc_func.nii.gz"
+
+        ### Checking if cleaned files already exist ###
+        if [[ -f ${cleaned_scm_file_name} && -f ${cleaned_scm_ts_file_name} ]]; then
+            echo "✔ Cleaned Signal Change Map and Signal Change Time Series for further analysis exists."
+        else
+            masking_file scm_mc_func.nii.gz ${cleaned_scm_file_name} || exit 1
+            masking_file time_series_scm_mc_func.nii.gz ${cleaned_scm_ts_file_name} || exit 1
+        fi
+    else
+        echo "⏭️ Masks not generated, will not get cleaned data in further pipeline"    
+    fi
+else
+    echo "⏭️ Signal Change Map not estimated"
+fi
+
+# ==============================================================================================================================================================================================================
+# Coregistering functional time series and functional signal change map to structural images using AFNI
+# ==============================================================================================================================================================================================================
+
+
+
+affine_matrix_file="mean_func_struct_aligned.aff12.1D"
+reference_file=${structural_file_for_coregistration}
+input_file1=${mean_image_for_coregistration}
+apply_affine="true" #### will always be set to true as we want to apply the affine estimated from mean functional image to SCM and functional time series ####
+
+#### Deciding input files #2 i.e cleaned or uncleaned SCM based on whether masking was applied or not ####
+if is_step_enabled "masking_file"; then
+    input_file2="cleaned_scm_mc_func.nii.gz"
+else
+    input_file2="scm_mc_func.nii.gz"
+fi
+
+uncleaned_coregisterd_scm_file="signal_change_map_coregistered_structural_space.nii.gz"
+coregistered_time_series_file="fMRI_coregistered_to_struct.nii.gz"
+
+#### Coregistration to be applied or not ####
+if is_step_enabled "coregistration_afni"; then
+    echo "Coregistering functional time series and functional signal change map to structural images using AFNI"
+    
+    #### Based on presence of affine matrix, decide if affine matrix needs to be estimated or not ####
+    if [[ -f ${affine_matrix_file} ]]; then
+        echo "✔ Affine matrix for SCM coregistration already exists. Reusing it."
+        estimate_affine="false"
+    else
+        echo "Estimating affine matrix for SCM coregistration."
+        estimate_affine="true"
+    fi
+    
+    #### Coregistering functional SCM to structural images ####
+    coregistration_afni ${input_file1} ${input_file2} ${reference_file} mean_func_coreg_to_struct.nii.gz scm_coreg_to_struct.nii.gz ${estimate_affine} ${apply_affine} ${affine_matrix_file}
+    
+    #### Coregistering functional time series to structural images ####
+    coregistration_afni "" ${func_file_name_for_scm} ${reference_file} "" fMRI_coregistered_to_struct.nii.gz false true ${affine_matrix_file}
+    
+    mean_coregistered_image="mean_func_coreg_to_struct.nii.gz"
+    fslmaths fMRI_coregistered_to_struct.nii.gz -Tmean ${mean_coregistered_image}
+
+    #### Generating Signal Change Maps and Signal Change Time Series of the coregistered functional data ####
+    if is_step_enabled "signal_change_map"; then
+
+        echo "Generating Signal Change Map and Signal Change Time Series of the coregistered functional data"
+        signal_change_map fMRI_coregistered_to_struct.nii.gz ${base_start_idx} ${base_end_idx} ${sig_start_idx} ${sig_end_idx} scm_coregistered_structural_space
+    
+        if is_step_enabled "masking_file"; then
+            echo "Cleaning the Signal Change Map generated from the coregistered functional data by applying mask"
+            
+            cleaned_coreg_scm_file_name="cleaned_scm_coregistered_structural_space.nii.gz"
+            cleaned_coreg_scm_ts_file_name="cleaned_time_series_scm_coregistered_structural_space.nii.gz"
+    
+            ### Checking if cleaned files already exist ###
+            if [[ -f ${cleaned_coreg_scm_file_name} && -f ${cleaned_coreg_scm_ts_file_name} ]]; then
+                echo "✔ Cleaned Signal Change Map and Signal Change Time Series of the coregistered functional data for further analysis exists."
+            else
+                masking_file scm_coregistered_structural_space.nii.gz ${cleaned_coreg_scm_file_name} || exit 1
+                masking_file time_series_scm_coregistered_structural_space.nii.gz ${cleaned_coreg_scm_ts_file_name} || exit 1
+            fi
+        else
+            echo "⏭️ Masks not generated, will not get cleaned data in further pipeline"
+    fi
+
+else
+    echo "⏭️ Coregistration not executed"
+fi
+
+# ==============================================================================================================================================================================================================
+# Marking ROIs and saving time courses
+# ==============================================================================================================================================================================================================
+
+
+if is_step_enabled "roi_analysis"; then
+    echo "Marking ROIs and saving time courses"
+
+    
+    ### Detecting ROIs safely ###
+    
+    shopt -s nullglob
+    roi_files=(roi_*.nii.gz)
+    shopt -u nullglob
+
+    if [[ ${#roi_files[@]} -eq 0 ]]; then
+        echo "✔ ROI files not found."
+        echo "Please create ROI files named as:"
+        echo "roi_{Neurotransmitter}_{Direct or AAV}_{Concentration}_{Functional or Coregistered}_{Left or Right}.nii.gz"
+
+        #### Display images for ROI creation ###
+        if [[ -f "${mean_coregistered_image:-}" ]]; then
+            fsleyes "${structural_file_for_coregistration}" "${mean_coregistered_image}" &
+        else
+            fsleyes "${structural_file_for_coregistration}" &
+        fi
+
+        fsleyes ../middle_vol.nii.gz &
+        exit 0
+    else
+        echo "✔ ROI files found. Proceeding to data analysis."
+    fi
+    ### ROI Loop ###
+    roi_left=""
+    roi_right=""
+
+    roi_names=()
+    roi_hemis=()
+    roi_means=()
+
+    for roi in "${roi_files[@]}"; do
+
+        roi_base=$(basename "$roi")
+        #### Determine hemisphere ####
+        if [[ "$roi_base" == *left.nii.gz ]]; then
+            hemi="left"
+            roi_left="$roi"
+        elif [[ "$roi_base" == *right.nii.gz ]]; then
+            hemi="right"
+            roi_right="$roi"
+        else
+            echo "[WARN] Cannot determine hemisphere for $roi_base, skipping"
+            continue
+        fi
+
+        #### Determine correct functional file ####
+        if [[ "$roi_base" == *functional* ]]; then
+            func_to_use="${func_file_name_for_scm}"
+        elif [[ "$roi_base" == *coregistered* ]]; then
+            func_to_use="fMRI_coregistered_to_struct.nii.gz"
+        else
+            echo "[WARN] Cannot determine space for $roi_base, skipping"
+            continue
+        fi
+
+        echo
+        echo "[INFO] Running ROI analysis"
+        echo "       ROI  : $roi_base"
+        echo "       Hemi : $hemi"
+        echo "       Func : $func_to_use"
+
+        mean_psc=$(roi_analysis "$func_to_use" "$roi" "$base_start_idx" "$base_end_idx" "$sig_start_idx" "$sig_end_idx" "$tr") || {echo "[ERROR] ROI analysis failed for $roi_base"; continue;}
+
+        roi_names+=("$roi_base")
+        roi_hemis+=("$hemi")
+        roi_means+=("$mean_psc")
+
+        echo "[RESULT] Mean PSC ($roi_base) = $mean_psc"
+
+        ## live terminal plot for individual ROIs ##
+        
+        gnuplot << EOF
+set terminal dumb size 120,30
+set title "LIVE PSC – $roi_base"
+set xlabel "Time (minutes)"
+set ylabel "Signal Change (%)"
+set grid
+plot "PSC_time_series_${roi_base%.nii.gz}.txt" using (\$0*$tr/60.0):1 with lines title "$roi_base"
+EOF
+
+    done
+
+    ### Combining left and right ROI plots ###    
+
+    if [[ -n "$roi_left" && -n "$roi_right" ]]; then
+
+        combined_plot="PSC_Time_Series_LEFT_vs_RIGHT.svg"
+
+        gnuplot << EOF
+set terminal svg size 900,400
+set output "$combined_plot"
+set title "Percent Signal Change – Left vs Right ROI"
+set xlabel "Time (minutes)"
+set ylabel "Signal Change (%)"
+
+set style rect fc rgb "green" fs solid 0.2 noborder
+set object rect from ($base_start_idx*$tr/60.0), graph 0 to ($base_end_idx*$tr/60.0), graph 1
+
+set style rect fc rgb "blue" fs solid 0.2 noborder
+set object rect from ($sig_start_idx*$tr/60.0), graph 0 to ($sig_end_idx*$tr/60.0), graph 1
+
+plot \
+  "PSC_time_series_${roi_left%.nii.gz}.txt"  using (\$0*$tr/60.0):1 with lines lw 2 lc rgb "red"  title "Left ROI", \
+  "PSC_time_series_${roi_right%.nii.gz}.txt" using (\$0*$tr/60.0):1 with lines lw 2 lc rgb "blue" title "Right ROI"
+EOF
+
+        echo "[OK] Combined plot saved → $combined_plot"
+    else
+        echo "[INFO] Skipping combined plot (left or right ROI missing)"
+    fi
+
+else
+    echo "⏭️ ROI Analysis not executed"
+fi
+
+
+
+# ==============================================================================================================================================================================================================
+# Voxel-wise Correlation Analysis
+# ==============================================================================================================================================================================================================
+
+if [[ "$sequence_name_func" == "functionalEPI" ]]; then 
+
+    curl -f -O https://raw.githubusercontent.com/njainmpi/amplify/main/seed_voxelwise_correlation.py || { echo "❌ Download failed"; exit 1; }
+    curl -f -O https://raw.githubusercontent.com/njainmpi/amplify/main/compare_conditions.py || { echo "❌ Download failed"; exit 1; }
+    chmod +x seed_voxelwise_correlation.py compare_conditions.py
+
+    seed_used="roi_seed.nii.gz"
+
+    ## Establishing correlation analysis before injection ##
+    python3 seed_voxelwise_correlation.py --func "${input_name_for_next_step}.nii.gz" --seed-mask "${seed_used}" --target-mask "${mask_name_wo_cannulas}" --start 100 --stop 500 --output-prefix before
+
+    ## Establishing correlation analysis during injection ##
+    python3 seed_voxelwise_correlation.py --func "${input_name_for_next_step}.nii.gz" --seed-mask "${seed_used}" --target-mask "${mask_name_wo_cannulas}" --start 700 --stop 1100 --output-prefix during
+
+    ## Establishing correlation analysis after injection ##
+    python3 seed_voxelwise_correlation.py --func "${input_name_for_next_step}.nii.gz" --seed-mask "${seed_used}" --target-mask "${mask_name_wo_cannulas}" --start 1300 --stop 2300 --output-prefix after
+
+    #### Comparing of three conditions ####
+    python3 compare_conditions.py --before before_voxelwise_correlation.txt --during during_voxelwise_correlation.txt --after  after_voxelwise_correlation.txt --output-prefix injection_effect
+
+    rm -f seed_voxelwise_correlation.py compare_conditions.py
+else
+    echo "⏭️ Voxel-wise correlation skipped (not functionalEPI)"
+fi
+
+
+# ==============================================================================================================================================================================================================
+# Entering all data analysis record in the SQL Database
+# ==============================================================================================================================================================================================================
+
+DB="${root_location}/analysis_record.db"
+
+#############################################
+# CREATE DATABASE TABLES (SAFE TO RE-RUN)
+#############################################
+
+echo "[INFO] Initializing SQLite database"
+
+sqlite3 "$DB" <<EOF
+CREATE TABLE IF NOT EXISTS Analysis_Run (
+    run_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    analysis_done_by TEXT,
+    root_location TEXT,
+    subject_id TEXT,
+    analysis_folder_name TEXT,
+    functional_run INTEGER,
+    structural_run INTEGER,
+    temporal_res REAL,
+    window_duration INTEGER,
+    spatial_smoothing REAL,
+    spatial_smoothing_coreg_image REAL,
+    start_idx_correlation INTEGER,
+    end_idx_correlation INTEGER,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS ROI_Results (
+    roi_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    analysis_done_by TEXT,
+    root_location TEXT,
+    subject_id TEXT,
+    analysis_folder_name TEXT,
+    run_id INTEGER,
+    roi_name TEXT,
+    hemisphere TEXT,
+    mean_signal_change REAL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(run_id) REFERENCES Analysis_Run(run_id)
+);
+EOF
+
+#############################################
+# INSERT ANALYSIS RUN METADATA
+#############################################
+
+echo "[INFO] Writing analysis metadata to database"
+
+run_id=$(sqlite3 "$DB" <<EOF
+INSERT INTO Analysis_Run (
+  analysis_done_by,
+  root_location,
+  subject_id,
+  analysis_folder_name,
+  functional_run,
+  structural_run,
+  temporal_res,
+  window_duration,
+  spatial_smoothing,
+  spatial_smoothing_coreg_image
+)
+VALUES (
+  '${user}',
+  '${root_location}',
+  '${subject_id}',
+  '${folder_created}',
+  $func_scan_number,
+  $struct_scan_number,
+  $tr,
+  $win_vol,
+  $func_smooth_factor,
+  $coreg_smooth_factor
+);
+SELECT last_insert_rowid();
+EOF
+)
+
+echo "[OK] Analysis_Run inserted (run_id=$run_id)"
+
+#############################################
+# INSERT ROI RESULTS (ANY NUMBER OF ROIS)
+#############################################
+
+echo "[INFO] Writing ROI results to database"
+
+for i in "${!roi_names[@]}"; do
+    roi="${roi_names[$i]}"
+    hemi="${roi_hemis[$i]}"
+    mean="${roi_means[$i]}"
+
+    if [[ -z "$mean" ]]; then
+        mean_sql="NULL"
+    else
+        mean_sql="$mean"
+    fi
+
+    sqlite3 "$DB" <<EOF
+INSERT INTO ROI_Results (
+  analysis_done_by,
+  root_location,
+  subject_id,
+  analysis_folder_name,
+  run_id,
+  roi_name,
+  hemisphere,
+  mean_signal_change
+)
+VALUES (
+  '$user',
+  '$root_location',
+  '$subject_id',
+  '$folder_created',
+  $run_id,
+  '$roi',
+  '$hemi',
+  $mean_sql
+);
+EOF
+done
+
+echo "[OK] ROI results written to database"
+
+echo "📁 Database location: $DB"
+
 
